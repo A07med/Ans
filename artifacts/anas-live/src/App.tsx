@@ -13,13 +13,15 @@ import {
   useSubmitWamdaAttempt,
 } from '@workspace/api-client-react';
 import type { AdminActionInputAction, EventState, Participant } from '@workspace/api-client-react';
-import { ArrowLeft, Check, CircleHelp, Clock3, DoorOpen, LockKeyhole, Radio, RefreshCw, ShieldCheck, Signal, Sparkles, Users, Wifi } from 'lucide-react';
+import { ArrowLeft, Check, Clock3, DoorOpen, LockKeyhole, Radio, RefreshCw, ShieldCheck, Signal, Sparkles, Users, Wifi } from 'lucide-react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 const queryClient = new QueryClient();
+const APP_MODE = import.meta.env.VITE_APP_MODE === 'supabase' ? 'supabase' : 'demo';
+const IS_DEMO_MODE = APP_MODE === 'demo';
 
 const DEMO_STATE: EventState = {
   registrationOpen: true,
@@ -41,36 +43,35 @@ const DEMO_STATE: EventState = {
   updatedAt: new Date().toISOString(),
 };
 
-type StateWithDemo = { state: EventState; offline: boolean; loading: boolean; error: boolean };
+type StateWithDemo = { state: EventState | null; offline: boolean; loading: boolean; error: boolean };
 
 function useLiveState(): StateWithDemo {
   const query = useGetEventState({
     query: { queryKey: getGetEventStateQueryKey(), refetchInterval: 4000 },
   });
-  return { state: query.data ?? DEMO_STATE, offline: Boolean(query.error), loading: query.isLoading, error: Boolean(query.error) };
+  return { state: query.data ?? (IS_DEMO_MODE ? DEMO_STATE : null), offline: Boolean(query.error), loading: query.isLoading, error: Boolean(query.error) };
 }
 
 function Shell({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
   return (
-    <div className="app-shell page-grid" dir="rtl">
+    <div className="app-shell" dir="rtl">
       <header className={`mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5 md:px-10 ${compact ? 'absolute left-0 right-0 top-0 z-10' : ''}`}>
-        <Link href="/" className="flex items-center gap-3 text-inherit no-underline" data-testid="link-home">
+        <div className="flex items-center gap-3" data-testid="anas-brand">
           <div className="grid h-10 w-10 place-items-center rounded-full border border-[hsl(var(--primary)/.55)] text-sm text-[hsl(var(--primary))]">أ</div>
           <div>
             <div className="brand-word text-lg">أُنس</div>
-            <div className="font-mono-ui text-[9px] uppercase tracking-[.2em] text-[hsl(var(--muted-foreground))]">live room</div>
+            <div className="font-mono-ui text-[9px] uppercase tracking-[.2em] text-[hsl(var(--muted-foreground))]">مساء الافتتاح</div>
           </div>
-        </Link>
-        <nav className="hidden items-center gap-7 text-xs text-[hsl(var(--muted-foreground))] md:flex">
-          <Link href="/join" className="transition-colors hover:text-[hsl(var(--primary))]" data-testid="link-join">الانضمام</Link>
-          <Link href="/play" className="transition-colors hover:text-[hsl(var(--primary))]" data-testid="link-play">غرفة الحضور</Link>
-          <Link href="/admin" className="transition-colors hover:text-[hsl(var(--primary))]" data-testid="link-admin">غرفة التشغيل</Link>
-        </nav>
-        <div className="live-mark" data-testid="status-live">مساء الافتتاح · علوم</div>
+        </div>
+        <div className="live-mark" data-testid="status-live">الليلة تُروى معاً</div>
       </header>
       {children}
     </div>
   );
+}
+
+function BackendUnavailable() {
+  return <div className="panel rounded-2xl p-7 text-center md:p-10" data-testid="backend-unavailable"><div className="mx-auto mb-5 h-3 w-3 rounded-full bg-[hsl(var(--destructive))] shadow-[0_0_0_7px_hsl(var(--destructive)/.12)]" /><h1 className="arabic-display text-3xl">الإشارة غير متاحة</h1><p className="mx-auto mt-4 max-w-md text-sm leading-loose text-[hsl(var(--muted-foreground))]">وضع Supabase مفعّل، لكن لم تصلنا خدمة الحدث بعد. لا نعرض بيانات تجريبية مكان البيانات الحقيقية.</p></div>;
 }
 
 function LoadingBlock({ label = 'نحضّر الغرفة' }: { label?: string }) {
@@ -93,7 +94,6 @@ function Home() {
             <p className="mt-7 max-w-xl text-lg leading-loose text-[hsl(var(--muted-foreground))] md:text-xl">غرفة حيّة لافتتاحية الأنشطة الطلابية في كلية العلوم. ادخل باسمك، واترك الباقي للّيلة.</p>
             <div className="mt-10 flex flex-wrap gap-3">
               <Link href="/join" className="button-primary no-underline" data-testid="button-join-now">ادخل الغرفة <ArrowLeft size={16} /></Link>
-              <Link href="/play" className="button-outline no-underline" data-testid="button-open-room">أنا مسجّل بالفعل</Link>
             </div>
             <div className="mt-16 flex items-center gap-8 border-t border-[hsl(var(--border))] pt-5 text-xs text-[hsl(var(--muted-foreground))]">
               <span><b className="font-mono-ui text-[hsl(var(--primary))]">16:9</b> شاشة المسرح</span>
@@ -126,18 +126,27 @@ function Home() {
 
 function JoinPage() {
   const [form, setForm] = useState({ name: '', phone: '' });
-  const [participant, setParticipant] = useState<Participant | null>(null);
-  const [demo, setDemo] = useState(false);
+  const [, setLocation] = useLocation();
   const register = useRegisterParticipant();
   const { state, offline } = useLiveState();
+  useEffect(() => {
+    const saved = localStorage.getItem('anas-participant');
+    if (saved) setLocation('/play');
+  }, [setLocation]);
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (form.name.trim().length < 2 || form.phone.trim().length < 6 || register.isPending) return;
     register.mutate({ data: { name: form.name.trim(), phone: form.phone.trim() } }, {
-      onSuccess: (data) => { localStorage.setItem('anas-participant', JSON.stringify(data)); setParticipant(data); },
-      onError: () => { const local = { id: `local-${Date.now()}`, name: form.name.trim(), token: `demo-${Date.now()}` }; localStorage.setItem('anas-participant', JSON.stringify(local)); setParticipant(local); setDemo(true); },
+      onSuccess: (data) => { localStorage.setItem('anas-participant', JSON.stringify(data)); setLocation('/play'); },
+      onError: () => {
+        if (!IS_DEMO_MODE) return;
+        const local = { id: `local-${Date.now()}`, name: form.name.trim(), token: `demo-${Date.now()}` };
+        localStorage.setItem('anas-participant', JSON.stringify(local));
+        setLocation('/play');
+      },
     });
   };
+  if (!state) return <Shell><main className="mx-auto flex min-h-[calc(100dvh-84px)] max-w-md items-center px-5 py-12"><BackendUnavailable /></main></Shell>;
   return (
     <Shell>
       <main className="mx-auto grid min-h-[calc(100dvh-84px)] w-full max-w-6xl items-center gap-12 px-5 py-12 md:grid-cols-[.8fr_1.2fr] md:px-10">
@@ -149,16 +158,14 @@ function JoinPage() {
           <div className="mt-9 flex flex-wrap gap-3"><StatePill tone={state.registrationOpen ? 'green' : 'red'}>{state.registrationOpen ? 'التسجيل مفتوح' : 'التسجيل مغلق'}</StatePill>{offline && <StatePill tone="gold">وضع العرض المحلي</StatePill>}</div>
         </section>
         <section className="panel fade-up-delay rounded-2xl p-6 md:p-10">
-          {participant ? <SuccessCard participant={participant} demo={demo} /> : (
-            <form onSubmit={submit} className="space-y-6" data-testid="form-register">
+          <form onSubmit={submit} className="space-y-6" data-testid="form-register">
               <div className="flex items-center justify-between border-b border-[hsl(var(--border))] pb-5"><div><div className="font-display text-xl">بياناتك</div><div className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">لن تظهر للآخرين</div></div><span className="font-mono-ui text-xs text-[hsl(var(--primary))]">01 / 02</span></div>
               <label className="block"><span className="mb-2 block text-sm">الاسم</span><input className="input-field" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="كيف نناديك؟" autoComplete="name" data-testid="input-name" /></label>
               <label className="block"><span className="mb-2 block text-sm">رقم الجوال</span><input className="input-field text-left" dir="ltr" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="05X XXX XXXX" autoComplete="tel" data-testid="input-phone" /></label>
-              {register.error && !demo && <div className="rounded-lg border border-[hsl(var(--destructive)/.5)] bg-[hsl(var(--destructive)/.1)] p-3 text-sm text-[hsl(7_70%_72%)]" data-testid="error-register">تعذّر الاتصال الآن. سنحاول مرة أخرى عند الضغط.</div>}
+              {register.error && <div className="rounded-lg border border-[hsl(var(--destructive)/.5)] bg-[hsl(var(--destructive)/.1)] p-3 text-sm text-[hsl(7_70%_72%)]" data-testid="error-register">{IS_DEMO_MODE ? 'تعذّر الاتصال؛ يمكن متابعة وضع العرض المحلي.' : 'تعذّر الاتصال بخدمة التسجيل. لم يتم حفظ بياناتك.'}</div>}
               <button type="submit" className="button-primary w-full" disabled={!state.registrationOpen || register.isPending} data-testid="button-submit-registration">{register.isPending ? 'نفتح لك الباب…' : 'دخول الأمسية'} <ArrowLeft size={16} /></button>
               <div className="flex items-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]"><LockKeyhole size={13} /> رقمك للتسجيل فقط، ولا يُعرض على الشاشة.</div>
             </form>
-          )}
         </section>
       </main>
     </Shell>
@@ -180,21 +187,29 @@ function ExperienceCopy({ state }: { state: EventState }) {
 function PlayPage() {
   const { state, offline, loading } = useLiveState();
   const [participant, setParticipant] = useState<Participant | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const [, setLocation] = useLocation();
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const attempt = useSubmitWamdaAttempt();
   const [attemptState, setAttemptState] = useState<'ready' | 'sent' | 'false'>('ready');
-  useEffect(() => { const value = localStorage.getItem('anas-participant'); if (value) setParticipant(JSON.parse(value)); }, []);
-  useEffect(() => { if (state.currentExperience === 'wamda' && state.wamdaSignal === 'green' && !startedAt) setStartedAt(performance.now()); }, [state.currentExperience, state.wamdaSignal, startedAt]);
+  useEffect(() => {
+    const value = localStorage.getItem('anas-participant');
+    if (value) setParticipant(JSON.parse(value));
+    else setLocation('/join');
+    setHydrated(true);
+  }, [setLocation]);
+  const liveState = state ?? DEMO_STATE;
+  useEffect(() => { if (liveState.currentExperience === 'wamda' && liveState.wamdaSignal === 'green' && !startedAt) setStartedAt(performance.now()); }, [liveState.currentExperience, liveState.wamdaSignal, startedAt]);
   const clickWamda = () => {
-    const falseStart = state.wamdaSignal !== 'green';
+    const falseStart = liveState.wamdaSignal !== 'green';
     const reactionMs = falseStart || !startedAt ? 0 : Math.round(performance.now() - startedAt);
     setAttemptState(falseStart ? 'false' : 'sent');
     attempt.mutate({ data: { participantToken: participant?.token ?? 'demo-token', sessionId: `session-${Date.now()}`, signalId: `signal-${Date.now()}`, reactionMs, falseStart } });
   };
-  if (loading && !state) return <Shell><main className="mx-auto max-w-3xl px-5 py-32"><LoadingBlock /></main></Shell>;
+  if (!hydrated || loading) return <Shell><main className="mx-auto max-w-3xl px-5 py-32"><LoadingBlock label="نستعيد حضورك" /></main></Shell>;
+  if (!state) return <Shell><main className="mx-auto flex min-h-[calc(100dvh-84px)] max-w-md items-center px-5 py-12"><BackendUnavailable /></main></Shell>;
   return <Shell><main className="mx-auto min-h-[calc(100dvh-82px)] w-full max-w-6xl px-5 py-10 md:px-10">
-    <div className="mb-12 flex items-center justify-between"><div><div className="live-mark">غرفة الحضور</div><div className="mt-3 text-sm text-[hsl(var(--muted-foreground))]">{participant ? `أهلاً ${participant.name}` : 'لم تسجل بعد'}</div></div><div className="flex items-center gap-3">{offline && <StatePill tone="gold">عرض محلي</StatePill>}<Link href="/join" className="text-xs text-[hsl(var(--muted-foreground))] underline underline-offset-4" data-testid="link-change-registration">تسجيل جديد</Link></div></div>
-    {!participant && <div className="mb-8 flex items-center gap-3 rounded-xl border border-[hsl(var(--primary)/.3)] bg-[hsl(var(--primary)/.07)] p-4 text-sm"><CircleHelp size={16} className="text-[hsl(var(--primary))]" /><span>أدخل اسمك أولاً لتشارك في اللحظات التفاعلية.</span><Link href="/join" className="mr-auto text-[hsl(var(--primary))] underline" data-testid="link-register-prompt">التسجيل</Link></div>}
+     <div className="mb-12 flex items-center justify-between"><div><div className="live-mark">غرفة الحضور</div><div className="mt-3 text-sm text-[hsl(var(--muted-foreground))]">{participant ? `أهلاً ${participant.name}` : 'نستعيد حضورك'}</div></div><div className="flex items-center gap-3">{offline && <StatePill tone="gold">عرض محلي</StatePill>}</div></div>
     <div className="grid gap-10 lg:grid-cols-[1fr_.72fr] lg:items-center">
       <section className="fade-up">
         <ExperienceCopy state={state} />
@@ -214,6 +229,7 @@ function StageChrome({ children, label }: { children: ReactNode; label: string }
 
 function StagePage({ mode }: { mode: 'alive' | 'wamda' }) {
   const { state } = useLiveState();
+  if (!state) return <div className="stage-screen" dir="rtl"><div className="w-full max-w-md px-6"><BackendUnavailable /></div></div>;
   if (mode === 'alive') return <StageChrome label="01"><div className="flex flex-1 flex-col items-center justify-center text-center"><div className="stage-kicker mb-7">الجولة {String(state.stayAliveRound ?? 0).padStart(2, '0')}</div><div className="stage-title">باقي معنا؟</div><div className="stage-copy mt-6">{state.gameStatus === 'live' ? 'ابقَ في مكانك. لا تغادر.' : state.gameStatus === 'complete' ? `الفائز: ${state.stayAliveWinner ?? 'سيُعلن قريباً'}` : 'سنبدأ بعد لحظات'}</div><div className="mt-12 flex items-center gap-12"><div><div className="font-mono-ui text-5xl text-[#dfb78c]">{state.stayAliveRemaining}</div><div className="mt-1 text-xs text-[rgba(245,227,201,.5)]">باقون</div></div><div className="h-12 w-px bg-[rgba(245,227,201,.2)]" /><div><div className="font-mono-ui text-5xl text-[#dfb78c]">{state.registered}</div><div className="mt-1 text-xs text-[rgba(245,227,201,.5)]">دخلوا الغرفة</div></div></div></div></StageChrome>;
   const signal = state.wamdaSignal ?? 'idle';
   return <StageChrome label="02"><div className="flex flex-1 flex-col items-center justify-center text-center"><div className="stage-kicker mb-7">ردّ الفعل الأسرع</div><div className="stage-title">وَمْضَة</div><div className="stage-copy mt-5">{signal === 'green' ? 'الآن.' : signal === 'red' ? 'لا تضغط.' : 'انتظر الإشارة.'}</div><div className={`signal mt-10 ${signal === 'green' ? 'signal-green' : signal === 'red' ? 'signal-red' : 'signal-idle'}`}><div className="font-display text-3xl">{signal === 'green' ? 'أخضر' : signal === 'red' ? 'أحمر' : '—'}</div></div><div className="mt-8 font-mono-ui text-sm text-[rgba(245,227,201,.6)]">{state.wamdaResponses ?? 0} استجابة · {state.wamdaFalseStarts ?? 0} إشارة مبكرة</div></div></StageChrome>;
@@ -257,11 +273,12 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const summaryQuery = useGetEventSummary({ query: { queryKey: getGetEventSummaryQueryKey(), refetchInterval: 5000 } });
   const healthQuery = useHealthCheck({ query: { queryKey: getHealthCheckQueryKey(), refetchInterval: 10000 } });
   const [local, setLocal] = useState<EventState | null>(null);
-  const state = local ?? stateQuery.data ?? DEMO_STATE;
+  const state = local ?? stateQuery.data ?? (IS_DEMO_MODE ? DEMO_STATE : null);
   const action = useExecuteAdminAction();
   const round = useExecuteStayAliveRound();
   const [target, setTarget] = useState('64');
   const offline = Boolean(stateQuery.error || summaryQuery.error);
+  if (!state) return <div className="app-shell min-h-screen" dir="rtl"><main className="mx-auto max-w-md px-5 py-24"><BackendUnavailable /></main></div>;
   const fire = (name: AdminActionInputAction) => action.mutate({ data: { action: name } }, { onSuccess: setLocal, onError: () => setLocal(actionState(name, state)) });
   const doRound = () => round.mutate({ data: { targetSurvivors: Number(target) || 1 } }, { onSuccess: setLocal, onError: () => setLocal({ ...state, stayAliveRemaining: Number(target) || 1, stayAliveRound: (state.stayAliveRound ?? 0) + 1, updatedAt: new Date().toISOString() }) });
   const logs = summaryQuery.data?.eventLog ?? [{ id: '1', label: 'بدء العرض المحلي', detail: 'بانتظار اتصال غرفة التشغيل', time: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) }];
