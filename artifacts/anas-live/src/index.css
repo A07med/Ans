@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Kufi+Arabic:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -36,6 +36,14 @@
 }
 
 :root {
+  --anas-black: #160d0c;
+  --anas-burgundy: #571b26;
+  --anas-deep-red: #7c292b;
+  --anas-brown: #4a281c;
+  --anas-sand: #c58b5d;
+  --anas-cream: #f5e3c9;
+  --anas-copper: #dfb78c;
+  --anas-muted-green: #647e6a;
   --background: 31 24% 11%;
   --foreground: 35 37% 91%;
   --border: 29 18% 27%;
@@ -66,7 +74,7 @@
   --sidebar-accent-foreground: 35 37% 91%;
   --sidebar-ring: 28 67% 68%;
   --app-font-sans: 'Noto Sans Arabic', sans-serif;
-  --app-font-serif: 'Noto Kufi Arabic', sans-serif;
+  --app-font-serif: 'Noto Naskh Arabic', serif;
   --app-font-mono: 'DM Mono', monospace;
   --radius: 0.7rem;
   --tracking-normal: 0em;
@@ -115,14 +123,21 @@ body::before {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(circle at 12% 8%, rgba(143, 87, 52, .15), transparent 26rem),
-    radial-gradient(circle at 90% 80%, rgba(57, 91, 78, .12), transparent 24rem),
+    linear-gradient(90deg, rgba(18, 8, 7, .97), rgba(35, 15, 12, .79) 48%, rgba(17, 8, 7, .96)),
+    url('/anas-carpet.jpg') center / cover fixed,
     hsl(var(--background));
 }
 
-.page-grid {
-  background-image: linear-gradient(rgba(236, 213, 178, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(236, 213, 178, .035) 1px, transparent 1px);
-  background-size: 48px 48px;
+.app-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .26;
+  background:
+    linear-gradient(90deg, transparent 0 7%, rgba(223, 183, 140, .15) 7.1%, transparent 7.25% 92.75%, rgba(223, 183, 140, .15) 92.9%, transparent 93%),
+    linear-gradient(0deg, transparent 0 8%, rgba(223, 183, 140, .11) 8.1%, transparent 8.25% 91.75%, rgba(223, 183, 140, .11) 91.9%, transparent 92%);
+  mix-blend-mode: screen;
 }
 
 .live-mark {
@@ -143,7 +158,7 @@ body::before {
 }
 
 .brand-word { font-family: var(--app-font-serif); font-weight: 700; letter-spacing: -.06em; }
-.arabic-display { font-family: var(--app-font-serif); letter-spacing: -.075em; line-height: 1.18; }
+.arabic-display { font-family: var(--app-font-serif); font-weight: 600; letter-spacing: -.075em; line-height: 1.18; }
 
 .button-primary, .button-quiet, .button-outline, .button-danger {
   display: inline-flex; align-items: center; justify-content: center; gap: .65rem;
@@ -169,8 +184,9 @@ body::before {
 
 .panel {
   border: 1px solid hsl(var(--card-border));
-  background: linear-gradient(135deg, hsl(var(--card) / .94), hsl(28 20% 12% / .78));
+  background: linear-gradient(135deg, rgba(48, 23, 18, .94), rgba(24, 12, 11, .88));
   box-shadow: 0 18px 50px rgba(0,0,0,.14);
+  backdrop-filter: blur(8px);
 }
 
 .fade-up { animation: fade-up .65s both cubic-bezier(.2,.8,.2,1); }
@@ -181,11 +197,12 @@ body::before {
 
 .stage-screen {
   min-height: 100dvh; display: grid; place-items: center; position: relative; overflow: hidden;
-  background: #160d0c;
+  background: linear-gradient(90deg, rgba(14, 7, 7, .9), rgba(39, 14, 15, .55), rgba(14, 7, 7, .92)), url('/anas-carpet.jpg') center / cover;
 }
 .stage-screen::before {
   content: ''; position: absolute; inset: -10%;
-  background: radial-gradient(ellipse at 50% 10%, rgba(169, 94, 49, .25), transparent 48%), radial-gradient(ellipse at 50% 100%, rgba(104, 31, 34, .32), transparent 60%);
+  background: radial-gradient(ellipse at 50% 4%, rgba(223, 183, 140, .27), transparent 38%), linear-gradient(120deg, transparent 20%, rgba(236, 194, 143, .08) 33%, transparent 42%), radial-gradient(ellipse at 50% 100%, rgba(104, 31, 34, .42), transparent 60%);
+  mix-blend-mode: screen;
 }
 .stage-inner { width: min(100vw, 177.777vh); aspect-ratio: 16/9; max-height: 100dvh; position: relative; display: flex; flex-direction: column; justify-content: space-between; padding: 5% 7%; }
 .stage-kicker { color: #dfb78c; letter-spacing: .18em; font-size: clamp(.58rem, 1.1vw, .9rem); }

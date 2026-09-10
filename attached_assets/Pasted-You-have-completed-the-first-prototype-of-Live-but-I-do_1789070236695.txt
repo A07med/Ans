@@ -1,0 +1,839 @@
+You have completed the first prototype of "أُنس Live", but I do NOT approve the current version for event use yet.
+
+Continue working on the EXISTING project.
+
+Do not rebuild randomly from scratch and do not stop at mockups.
+
+This task has three mandatory goals:
+
+1. REDESIGN the experience so it genuinely matches the supplied أُنس identity.
+2. FIX the public routing / audience experience.
+3. Replace the temporary in-memory demo backend with the REAL Supabase implementation and complete the server-side integrity/security model we originally specified.
+
+Treat this as a production-readiness correction pass.
+
+==================================================
+A. CURRENT VERSION — WHAT IS WRONG
+==================================================
+
+The current visual result is too generic.
+
+The dark brown/copper palette is somewhat related to the references, but:
+
+- the background grid feels like a generic technology product
+- the page does not visually resemble the supplied أُنس identity enough
+- the carpet / majlis identity is missing
+- the visual motifs do not reflect the patterns found in the identity
+- the typography does not feel sufficiently close to the identity
+- the interface currently looks like a modern dashboard instead of a digital extension of أُنس
+
+Also:
+
+The PUBLIC navigation currently exposes links such as:
+
+الانضمام
+غرفة الحضور
+غرفة التشغيل
+
+This is NOT the intended experience.
+
+Audience members must never navigate between JOIN, PLAY and ADMIN manually.
+
+Fix this.
+
+==================================================
+B. BRAND REDESIGN — CRITICAL
+==================================================
+
+Re-open and carefully study ALL supplied أُنس identity references.
+
+Do not simply copy their colors.
+
+Study:
+
+- carpet
+- rug patterns
+- shadows
+- warm directional lighting
+- traditional majlis atmosphere
+- deep reds / burgundy
+- brown
+- cream / sand
+- old television/radio mood
+- silhouettes
+- analog photographic feeling
+- Arabic typography
+- composition
+
+The new application must look like it belongs to that exact identity family.
+
+-----------------------------------------
+B1. REMOVE CURRENT GENERIC GRID
+-----------------------------------------
+
+Remove the current generic technical square/grid background from the PUBLIC experience and stage experiences.
+
+Replace it with visual language inspired directly by the أُنس carpet identity.
+
+I want the carpet to become one of the main visual anchors.
+
+Use one of these approaches, in order of preference:
+
+1. If a clean usable carpet/background asset exists in the supplied identity files, use it.
+2. If the supplied identity background can be carefully cropped/processed into a clean reusable carpet texture without embedded poster text, do that.
+3. Otherwise recreate a lightweight carpet-inspired background using the SAME geometric/floral motif language visible in the references.
+
+DO NOT invent random Islamic patterns.
+
+The patterns must visually relate to the supplied identity.
+
+Use:
+
+- darkened carpet imagery
+- vignette
+- warm light beams
+- subtle grain
+- shadows
+
+to preserve text readability.
+
+Do not make the background overly busy.
+
+-----------------------------------------
+B2. TYPOGRAPHY
+-----------------------------------------
+
+The current typography is not close enough to the identity.
+
+Inspect supplied assets for the real event typography/font.
+
+If an actual licensed/provided brand font file exists in the project assets, use it appropriately.
+
+Do NOT download or redistribute commercial fonts illegally.
+
+For the word:
+
+أُنس
+
+prefer using the supplied official logo/artwork itself rather than recreating the logo using an unrelated font.
+
+For interface/body Arabic typography:
+
+choose the closest appropriate Arabic typeface available legally, after visually comparing it against the supplied identity.
+
+The Arabic typography should feel:
+warm
+editorial
+cultural
+premium
+not corporate SaaS
+
+Create a clear font hierarchy.
+
+-----------------------------------------
+B3. VISUAL MOTIFS
+-----------------------------------------
+
+Replace current generic circles/grid decorations where appropriate with restrained motifs derived from:
+
+- the carpet borders
+- carpet geometry
+- warm analog signal marks
+- old radio indicator details
+- identity framing
+
+Do NOT decorate every section.
+
+The design must stay premium and readable.
+
+-----------------------------------------
+B4. COLOR
+-----------------------------------------
+
+Derive actual colors by sampling/approximating the supplied references.
+
+Create reusable CSS tokens such as:
+
+--anas-black
+--anas-burgundy
+--anas-deep-red
+--anas-brown
+--anas-sand
+--anas-cream
+--anas-copper
+--anas-muted-green
+
+Do not use random bright neon colors.
+
+Even the Wamda red/green states should remain tasteful and fit the identity.
+
+==================================================
+C. PUBLIC NAVIGATION MUST BE REMOVED
+==================================================
+
+This is very important.
+
+Audience-facing pages must NOT contain navigation links for:
+
+- Admin
+- Control Room
+- Stage
+- Play
+- Join
+
+There should be NO public top navigation like the current version.
+
+The intended audience journey is ONLY:
+
+QR
+→ /join
+→ registration
+→ /play
+
+After registration, the participant stays on /play.
+
+They do not choose games.
+
+They do not click into admin.
+
+They do not navigate to stage routes.
+
+-----------------------------------------
+C1. /join
+-----------------------------------------
+
+/join is only the registration experience.
+
+Show:
+
+أُنس
+
+أهلًا بك في أُنس
+
+الاسم
+رقم الهاتف
+
+[ دخول أُنس ]
+
+Keep it beautifully minimal.
+
+If already registered on the same device:
+
+automatically redirect to /play.
+
+If registration is closed and they are not registered:
+
+show:
+
+اكتمل التسجيل لهذه الفقرة
+
+Do not show an admin/navigation menu.
+
+-----------------------------------------
+C2. /play
+-----------------------------------------
+
+/play is the ONE persistent participant screen.
+
+The participant stays here for the entire event.
+
+The participant should NEVER need to select:
+
+باقي معنا؟
+or
+وَمْضَة
+
+The ADMIN decides which experience is active.
+
+Use event_state.current_experience.
+
+Possible values:
+
+lobby
+stay_alive
+intermission
+wamda
+end
+
+The /play component reacts automatically in realtime.
+
+Example:
+
+Admin:
+ACTIVATE STAY ALIVE
+
+All connected /play clients automatically show:
+
+باقي معنا؟
+
+Later Admin:
+RETURN TO LOBBY
+
+All /play clients return to lobby.
+
+Later Admin:
+ACTIVATE WAMDA
+
+All /play clients automatically change to:
+
+وَمْضَة
+
+No manual navigation.
+
+Prefer switching the component/state inside /play rather than changing the participant URL.
+
+This makes reconnection and event operation simpler.
+
+==================================================
+D. ADMIN MUST BE PRIVATE AND UNLINKED
+==================================================
+
+Route:
+
+/admin
+
+There must be NO public link to it.
+
+The organizers know the URL manually.
+
+However:
+
+SECURITY BY HIDING THE URL IS NOT ENOUGH.
+
+Implement actual Supabase Auth.
+
+The current preview behavior:
+
+"any access code >= 4 characters"
+
+must remain ONLY as an explicitly labelled development/demo adapter if necessary.
+
+It MUST NOT be the production admin authentication.
+
+For the real Supabase mode:
+
+- Admin signs in with Supabase Auth.
+- Server verifies the authenticated user.
+- Server verifies the user is an authorized admin.
+- Non-admin authenticated users cannot perform game operations.
+- Anonymous users cannot perform game operations.
+
+Admin authorization must be enforced server-side / database-side, not merely by hiding frontend buttons.
+
+==================================================
+E. REMOVE THE IN-MEMORY BACKEND AS PRODUCTION MODE
+==================================================
+
+The previous report stated:
+
+"The current preview intentionally uses an in-memory adapter."
+
+That is no longer sufficient.
+
+I need the REAL Supabase implementation now.
+
+The in-memory implementation may remain ONLY as:
+
+DEMO_MODE
+
+for development/testing.
+
+But the application must support a proper:
+
+SUPABASE_MODE
+
+and Supabase must become the intended real-event backend.
+
+Wire:
+
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+
+Never expose:
+
+SUPABASE_SERVICE_ROLE_KEY
+
+in browser/frontend code.
+
+==================================================
+F. SUPABASE DATABASE
+==================================================
+
+Review the existing migration:
+
+supabase/migrations/0001_anas_live.sql
+
+Do not assume it is correct just because it exists.
+
+Audit it against the actual current application.
+
+Implement a clean schema supporting at minimum:
+
+participants
+event_state
+game_sessions
+
+stay_alive_rounds
+stay_alive_participant_state
+
+wamda_attempts
+
+admin_profiles / admin authorization
+admin_action_log
+
+Use:
+
+UUID primary keys
+foreign keys
+unique constraints
+proper indexes
+server timestamps
+RLS
+
+Phone numbers must not be publicly readable.
+
+==================================================
+G. REGISTRATION BACKEND
+==================================================
+
+Registration must be server-backed.
+
+Requirements:
+
+- normalize Oman phone input
+- prevent duplicate participant registrations
+- one phone = one participant for this event
+- generate a secure participant session token / identifier
+- preserve participant identity on refresh
+- do not expose participant IDs sequentially
+- do not expose phone numbers to other participants
+- existing device returns to /play
+
+Do not trust localStorage alone as authorization.
+
+Use an appropriate token/session mechanism for participant operations.
+
+==================================================
+H. STAY ALIVE — SERVER-SIDE VALIDATION
+==================================================
+
+Audit and complete the backend implementation.
+
+The browser must NEVER decide:
+
+who survives
+who is eliminated
+who wins
+
+No client-side Math.random().
+
+When admin starts a round:
+
+Admin
+→ authorized server operation
+→ server/database transaction
+→ determine eligible alive participants
+→ securely/randomly choose survivors
+→ persist all results
+→ update round state
+→ broadcast updated state
+
+The operation must be atomic.
+
+Protect against:
+
+- double click
+- duplicate request
+- two admins clicking simultaneously
+- repeating the same round accidentally
+
+Add idempotency/unique constraints where appropriate.
+
+Persist:
+
+round number
+before count
+after count
+survivors
+eliminated participants
+timestamp
+game session
+admin actor
+
+An eliminated Stay Alive participant:
+
+MUST NOT be able to re-enter the same Stay Alive session.
+
+But:
+
+MUST remain fully eligible for Wamda.
+
+Final winner must be selected server-side.
+
+Selection and reveal MUST remain separate.
+
+==================================================
+I. WAMDA — SERVER/BACKEND INTEGRITY
+==================================================
+
+Complete the real backend implementation.
+
+Wamda remains a casual live-event reaction game, not professional esports, but implement sensible integrity checks.
+
+Workflow:
+
+Admin:
+ARM
+
+Server:
+- verify admin
+- create/identify active Wamda session
+- create unique green event ID
+- choose random secret delay between configured limits, e.g. 2–7 seconds
+- transition to armed state
+
+The exact green timing must not depend on a simple client-side Math.random().
+
+At the chosen time:
+
+server changes/broadcasts the authoritative GREEN state.
+
+Participant devices receive the green event.
+
+On each participant device:
+
+use performance.now() to measure local reaction duration:
+
+greenReceivedLocalTime
+→ tapLocalTime
+→ reaction_ms
+
+Send attempt to secure backend.
+
+Server validates:
+
+- participant session is legitimate
+- active Wamda session matches
+- green event ID matches
+- Wamda is active
+- participant has not already attempted
+- participant was not already false-started
+- exactly one attempt per participant per session
+- reaction_ms is positive
+- reaction_ms is within a plausible range
+- malformed/extreme values are rejected or flagged
+- duplicates are rejected
+
+If participant presses RED:
+
+persist false_start = true
+
+and prevent second attempt.
+
+Winner selection:
+
+valid attempts only.
+
+Define and document deterministic tie behavior.
+
+IMPORTANT FAIRNESS NOTE:
+
+Client-measured reaction_ms cannot be made cryptographically cheat-proof because the browser is controlled by the participant.
+
+Do not falsely claim perfect anti-cheat.
+
+For this student event, implement practical sanity checks and flag suspicious values.
+
+Admin must be able to see suspicious results before winner reveal if necessary.
+
+==================================================
+J. REALTIME
+==================================================
+
+Now connect actual Supabase Realtime.
+
+Participant /play needs realtime updates for:
+
+- current experience
+- Stay Alive participant result/state
+- round transitions
+- finalist/winner state
+- Wamda waiting/armed/green/result states
+
+Stage screens need:
+
+- game state
+- counts
+- reveal states
+
+Admin needs:
+
+- registration count
+- connected/active approximation
+- game states
+- responses
+- false starts
+
+Implement reconnection.
+
+If a participant refreshes:
+
+load authoritative current state from Supabase first,
+then subscribe to updates.
+
+Do not rely only on an event they may have missed.
+
+==================================================
+K. STAGE ROUTES
+==================================================
+
+Keep:
+
+/stage/alive
+/stage/wamda
+
+These are for organizers/projector only.
+
+Do not link them publicly.
+
+-----------------------------------------
+K1. STAGE ALIVE DESIGN
+-----------------------------------------
+
+This stage should feel like the darker, suspenseful side of the supplied أُنس identity.
+
+Use:
+
+actual carpet-inspired background
+deep shadow
+warm light
+cream typography
+burgundy details
+subtle analog texture
+
+The giant survivor number must remain extremely readable.
+
+-----------------------------------------
+K2. STAGE WAMDA DESIGN
+-----------------------------------------
+
+Use the same identity system but create a different composition.
+
+Main focus:
+
+large analog-style signal lamp
+
+RED:
+انتظر...
+
+GREEN:
+الآن!
+
+Think of an old indicator lamp / radio signal inside an أُنس visual world.
+
+Not a gaming arcade UI.
+
+==================================================
+L. MOBILE DESIGN
+==================================================
+
+Public mobile experience should be much simpler than the current desktop-style join page.
+
+On a phone:
+
+no header navigation
+no multi-column layout
+no excessive information
+
+Use:
+
+logo
+short copy
+form/state
+carpet/identity atmosphere
+
+The participant must immediately understand what to do.
+
+==================================================
+M. ADMIN DESIGN
+==================================================
+
+Admin may keep a more utilitarian interface.
+
+It does NOT need the heavy carpet background everywhere.
+
+But it should still use the أُنس palette.
+
+Admin priorities:
+
+clarity
+large controls
+status
+safety
+speed
+
+Not cinematic decoration.
+
+==================================================
+N. DEMO MODE
+==================================================
+
+Keep Demo Mode.
+
+It is useful.
+
+But clearly separate:
+
+DEMO BACKEND
+vs
+SUPABASE BACKEND
+
+Display a prominent badge in admin if currently using Demo Mode:
+
+DEMO MODE — NOT FOR EVENT USE
+
+The production/event build must make it obvious which backend is active.
+
+==================================================
+O. CONFIGURATION
+==================================================
+
+Implement a clean environment-driven backend selection.
+
+For example:
+
+VITE_APP_MODE=demo
+or
+VITE_APP_MODE=supabase
+
+Use the project's best architecture rather than blindly following this exact variable name if a better pattern exists.
+
+Document it.
+
+If Supabase credentials are not currently provided:
+
+do NOT pretend Supabase is connected.
+
+Finish all integration code/migrations/functions.
+
+Then clearly tell me exactly:
+
+1. which Supabase project I need
+2. which environment values to provide
+3. which SQL migration to run
+4. which Edge Functions/RPCs need deploying
+5. how to verify connection
+
+==================================================
+P. SECURITY TESTS
+==================================================
+
+Before claiming the backend is ready, test:
+
+PUBLIC USER CANNOT:
+- start Stay Alive
+- perform a round
+- select/reveal winner
+- arm Wamda
+- change event state
+- read all phone numbers
+- submit attempts for another participant
+
+STAY ALIVE:
+- random selection is backend-side
+- round is atomic
+- duplicate round action is rejected/idempotent
+- eliminated user stays eliminated
+- Wamda eligibility remains intact
+- final winner exactly one
+
+WAMDA:
+- false start persists
+- second attempt rejected
+- attempt before green rejected
+- duplicate attempt rejected
+- wrong session rejected
+- wrong green_event_id rejected
+- invalid reaction time rejected/flagged
+- winner comes from valid attempts only
+
+ADMIN:
+- anonymous user rejected
+- authenticated non-admin rejected
+- authorized admin accepted
+
+==================================================
+Q. VISUAL QA
+==================================================
+
+After redesigning:
+
+compare side-by-side against the supplied أُنس identity.
+
+Specifically inspect:
+
+/join mobile
+/play lobby mobile
+/play Stay Alive mobile
+/play Wamda mobile
+/stage/alive 1920×1080
+/stage/wamda 1920×1080
+
+Do not finish until these visually feel like a coherent extension of the supplied identity.
+
+The test question is:
+
+"If someone saw the أُنس poster and then saw this stage screen, would they immediately believe they belong to the same event?"
+
+If NO:
+keep refining.
+
+==================================================
+R. IMPORTANT — DO NOT CLAIM COMPLETION TOO EARLY
+==================================================
+
+The previous report called the preview complete while also saying:
+
+- Supabase is not connected
+- admin auth is demo-only
+- Realtime is follow-up work
+- full edge-case tests are follow-up work
+
+Do not do that again.
+
+Use these statuses:
+
+VISUAL PREVIEW READY
+BACKEND INTEGRATED
+EVENT READY
+
+Only say EVENT READY when the actual Supabase backend, authorization, realtime, integrity checks and tests are complete.
+
+==================================================
+S. FINAL RESPONSE
+==================================================
+
+At the end give me:
+
+1. VISUAL STATUS
+2. BACKEND MODE CURRENTLY ACTIVE:
+   - DEMO
+   - SUPABASE
+3. Whether real Supabase is actually connected
+4. Database tables implemented
+5. RLS status
+6. Admin authentication status
+7. Stay Alive server-side validation status
+8. Wamda server-side validation status
+9. Realtime status
+10. Test results
+11. Build results
+12. Routes
+13. What changed visually
+14. Exact assets/font choices
+15. Any remaining blockers
+16. Exact steps I must perform before a real event test
+
+Do not merely tell me what should change.
+
+Make the changes in the existing project now.
