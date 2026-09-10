@@ -79,7 +79,7 @@ create policy wamda_public_signal_read on public.wamda_public_signals for select
 
 create or replace function public.is_admin() returns boolean language sql stable security definer set search_path=public,auth
 as $$ select exists(select 1 from public.admin_profiles where user_id=auth.uid() and active); $$;
-revoke all on function public.is_admin() from public,anon;
+revoke all on function public.is_admin() from public,anon,authenticated;
 grant execute on function public.is_admin() to authenticated;
 create or replace function public.require_admin() returns uuid language plpgsql stable security definer set search_path=public,auth as $$
 declare v_uid uuid:=auth.uid(); begin
@@ -103,8 +103,9 @@ select jsonb_build_object('registrationOpen',s.registration_open,'currentExperie
 'wamdaFlagged',coalesce(attempts.flagged,0),'wamdaFastestMs',case when g.winner_revealed then attempts.selected_ms else null end,
 'wamdaWinner',case when s.active_game='wamda' then (select name from winner) else null end,'wamdaSignal',coalesce(signal.status,'idle'),'updatedAt',s.updated_at)
 from s left join g on true left join attempts on true left join signal on true; $$;
-revoke all on function public.public_event_state_json() from public;
+revoke all on function public.public_event_state_json() from public,anon,authenticated;
 create or replace function public.get_public_event_state() returns jsonb language sql stable security definer set search_path=public as $$ select public.public_event_state_json(); $$;
+revoke all on function public.get_public_event_state() from public,anon,authenticated;
 grant execute on function public.get_public_event_state() to anon,authenticated;
 
 create or replace function public.register_participant(p_name text,p_phone text) returns jsonb language plpgsql security definer set search_path=public as $$
@@ -112,13 +113,17 @@ declare v_participant public.participants; v_token text; v_open boolean; begin
   select registration_open into v_open from public.event_state where id for share; if not v_open then raise exception 'registration_closed'; end if;
   p_name:=regexp_replace(btrim(p_name),'\s+',' ','g');
   if char_length(p_name) not between 2 and 80 or p_phone !~ '^\+968[79][0-9]{7}$' then raise exception 'invalid_registration'; end if;
-  insert into public.participants(name,phone_normalized) values(p_name,p_phone) on conflict(phone_normalized) do update set updated_at=now() returning * into v_participant;
-  update public.participant_sessions set revoked_at=now() where participant_id=v_participant.id and revoked_at is null;
+  begin
+    insert into public.participants(name,phone_normalized) values(p_name,p_phone) returning * into v_participant;
+  exception when unique_violation then
+    raise exception 'already_registered' using errcode='P0001';
+  end;
   v_token:=encode(gen_random_bytes(32),'hex'); insert into public.participant_sessions(participant_id,token_hash) values(v_participant.id,digest(v_token,'sha256'));
   insert into public.admin_action_log(action,detail) values('participant_registered','Participant registered');
   update public.event_state set updated_at=now() where id;
   return jsonb_build_object('token',v_token,'participantId',v_participant.id,'name',v_participant.name);
 end; $$;
+revoke all on function public.register_participant(text,text) from public,anon,authenticated;
 grant execute on function public.register_participant(text,text) to anon,authenticated;
 create or replace function public.session_participant_id(p_token text) returns uuid language plpgsql security definer set search_path=public as $$
 declare v_id uuid; begin if p_token is null or char_length(p_token)<>64 then return null; end if;
@@ -131,6 +136,7 @@ update public.participant_sessions set last_seen_at=now() where token_hash=diges
 select active_game_session_id into v_session from public.event_state where id; select status into v_stay from public.stay_alive_entries where game_session_id=v_session and participant_id=v_pid;
 select * into v_attempt from public.wamda_attempts where game_session_id=v_session and participant_id=v_pid;
 return jsonb_build_object('participantId',v_pid,'name',v_name,'stayAliveStatus',v_stay,'wamdaAttempt',case when v_attempt.id is null then 'none' when v_attempt.false_start then 'false_start' when cardinality(v_attempt.integrity_flags)>0 then 'flagged' else 'valid' end,'reactionMs',v_attempt.reaction_ms); end; $$;
+revoke all on function public.get_participant_state(text) from public,anon,authenticated;
 grant execute on function public.get_participant_state(text) to anon,authenticated;
 
 create or replace function public.execute_stay_alive_round(p_target_survivors integer,p_request_id uuid) returns jsonb language plpgsql security definer set search_path=public,auth as $$
@@ -149,7 +155,7 @@ insert into public.stay_alive_rounds(game_session_id,request_id,round_number,num
 update public.event_state set game_status=case when p_target_survivors<=3 then 'selection' else 'live' end,updated_at=now() where id;
 insert into public.admin_action_log(request_id,action,detail,admin_user_id,game_session_id) values(p_request_id,'stay_alive_round',v_before||' → '||p_target_survivors,v_admin,v_session);
 return public.public_event_state_json(); end; $$;
-revoke all on function public.execute_stay_alive_round(integer,uuid) from public,anon;
+revoke all on function public.execute_stay_alive_round(integer,uuid) from public,anon,authenticated;
 grant execute on function public.execute_stay_alive_round(integer,uuid) to authenticated;
 
 create or replace function public.admin_action(p_action text,p_payload jsonb default '{}'::jsonb,p_request_id uuid default gen_random_uuid()) returns jsonb language plpgsql security definer set search_path=public,auth as $$
@@ -173,7 +179,7 @@ elsif p_action='reset_wamda' then update public.game_sessions set status='cancel
 elsif p_action='full_reset' then update public.participant_sessions set revoked_at=now() where revoked_at is null; delete from public.participants; update public.event_state set registration_open=false,current_experience='lobby',active_game=null,active_game_session_id=null,active_signal_id=null,game_status='idle',stage_mode='lobby',updated_at=now() where id;
 else raise exception 'unknown_admin_action'; end if;
 insert into public.admin_action_log(request_id,action,detail,admin_user_id,game_session_id) values(p_request_id,p_action,coalesce(p_payload::text,''),v_admin,v_session); return public.public_event_state_json(); end; $$;
-revoke all on function public.admin_action(text,jsonb,uuid) from public,anon;
+revoke all on function public.admin_action(text,jsonb,uuid) from public,anon,authenticated;
 grant execute on function public.admin_action(text,jsonb,uuid) to authenticated;
 
 create or replace function public.arm_wamda(p_request_id uuid) returns jsonb language plpgsql security definer set search_path=public,auth as $$
@@ -184,7 +190,7 @@ v_trigger:=now()+((2+floor(random()*5))::text||' seconds')::interval; insert int
 insert into public.wamda_public_signals(id,game_session_id,status) values(v_signal,v_session,'red'); update public.event_state set active_signal_id=v_signal,game_status='live',updated_at=now() where id;
 insert into public.admin_action_log(request_id,action,detail,admin_user_id,game_session_id) values(p_request_id,'wamda_armed','Random server delay selected',v_admin,v_session);
 return jsonb_build_object('signalId',v_signal,'triggerAt',v_trigger); end; $$;
-revoke all on function public.arm_wamda(uuid) from public,anon;
+revoke all on function public.arm_wamda(uuid) from public,anon,authenticated;
 grant execute on function public.arm_wamda(uuid) to authenticated;
 create or replace function public.fire_wamda_signal(p_signal_id uuid) returns boolean language plpgsql security definer set search_path=public,auth as $$
 declare v_session uuid; begin if auth.role()<>'service_role' then raise exception 'service_role_required' using errcode='42501'; end if;
@@ -201,12 +207,13 @@ select * into v_signal from public.wamda_signals where id=p_signal_id and game_s
 v_false:=p_false_start or v_signal.status<>'green'; if not v_false then if p_reaction_ms is null or p_reaction_ms<=0 or p_reaction_ms>10000 then raise exception 'invalid_reaction_ms'; end if; v_valid:=true; if p_reaction_ms<120 then v_flags:=array_append(v_flags,'reaction_under_120ms'); end if; if now()-v_signal.green_at>interval '15 seconds' then v_flags:=array_append(v_flags,'late_submission'); end if; end if;
 insert into public.wamda_attempts(game_session_id,signal_id,participant_id,reaction_ms,false_start,valid,integrity_flags) values(p_game_session_id,p_signal_id,v_pid,case when v_false then null else p_reaction_ms end,v_false,v_valid,v_flags);
 return public.get_participant_state(p_token); exception when unique_violation then raise exception 'attempt_already_submitted' using errcode='23505'; end; $$;
+revoke all on function public.submit_wamda_attempt(text,uuid,uuid,integer,boolean) from public,anon,authenticated;
 grant execute on function public.submit_wamda_attempt(text,uuid,uuid,integer,boolean) to anon,authenticated;
 create or replace function public.get_admin_dashboard() returns jsonb language plpgsql stable security definer set search_path=public,auth as $$
 declare v_admin uuid; v_session uuid; begin v_admin:=public.require_admin(); select active_game_session_id into v_session from public.event_state where id;
 return jsonb_build_object('logs',coalesce((select jsonb_agg(jsonb_build_object('id',id,'action',action,'detail',detail,'createdAt',created_at) order by created_at desc) from (select * from public.admin_action_log order by created_at desc limit 80) l),'[]'::jsonb),
 'results',coalesce((select jsonb_agg(jsonb_build_object('attemptId',a.id,'participantName',p.name,'reactionMs',a.reaction_ms,'flags',a.integrity_flags,'selected',a.selected) order by a.reaction_ms,a.submission_received_at,a.id) from public.wamda_attempts a join public.participants p on p.id=a.participant_id where a.game_session_id=v_session and a.valid and not a.false_start),'[]'::jsonb)); end; $$;
-revoke all on function public.get_admin_dashboard() from public,anon;
+revoke all on function public.get_admin_dashboard() from public,anon,authenticated;
 grant execute on function public.get_admin_dashboard() to authenticated;
 
 do $$ begin alter publication supabase_realtime add table public.event_state; exception when duplicate_object then null; end $$;

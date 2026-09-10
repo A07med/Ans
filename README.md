@@ -73,6 +73,8 @@ Authenticated users not present in `admin_profiles`, disabled profiles, and anon
 
 - Oman phones are canonicalized to `+968[79]XXXXXXX`, constrained unique, and never returned by public RPCs.
 - The browser stores only a 256-bit opaque participant token. PostgreSQL stores its SHA-256 hash, validates expiry/revocation, and resolves all participant mutations from the token.
+- Registration is create-only. A duplicate phone receives `already_registered`; it cannot change the participant, revoke the original session, or mint/reveal another token. The unique phone constraint is the concurrency authority, so one simultaneous insert wins and the other fails closed.
+- Returning participants must use the original browser token. There is intentionally no phone-only recovery or OTP flow; an organizer must assist if that browser token is lost, and no admin screen exposes reusable participant tokens.
 - RLS is enabled on every table. Public clients have direct read access only to the safe event state and public signal projection; all sensitive tables have no anon/authenticated policies.
 - Admin mutations call `require_admin()` inside `security definer` RPCs. Advisory transaction locks, unique request IDs, and unique round/session constraints protect double-clicks and concurrent organizers.
 - Stay Alive eligibility is snapshotted at start and survivor selection is a single server-side bulk transaction using PostgreSQL randomness. Selection and reveal are separate actions.

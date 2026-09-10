@@ -1,5 +1,5 @@
 begin;
-select plan(22);
+select plan(29);
 
 select ok((select relrowsecurity from pg_class where oid='public.participants'::regclass), 'participants RLS enabled');
 select ok((select relrowsecurity from pg_class where oid='public.participant_sessions'::regclass), 'participant sessions RLS enabled');
@@ -25,6 +25,29 @@ select ok(not has_function_privilege('anon','public.admin_action(text,jsonb,uuid
 select ok(not has_function_privilege('anon','public.arm_wamda(uuid)','EXECUTE'), 'anon cannot arm Wamda');
 select ok(not has_function_privilege('anon','public.get_admin_dashboard()','EXECUTE'), 'anon cannot read admin logs or results');
 select ok(not has_function_privilege('anon','public.is_admin()','EXECUTE'), 'anon cannot probe admin allow-list');
+select ok(not has_function_privilege('anon','public.public_event_state_json()','EXECUTE'), 'anon cannot call the internal event-state helper');
+select ok(not has_function_privilege('anon','public.session_participant_id(text)','EXECUTE'), 'anon cannot call the token resolver directly');
+select ok(not has_function_privilege('authenticated','public.public_event_state_json()','EXECUTE'), 'authenticated clients cannot call the internal event-state helper');
+select ok(not has_function_privilege('authenticated','public.session_participant_id(text)','EXECUTE'), 'authenticated clients cannot call the token resolver directly');
+select ok(not has_function_privilege('authenticated','public.require_admin()','EXECUTE'), 'authenticated clients cannot call the admin guard directly');
+select ok(
+  not exists(
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.prosecdef
+      and not exists(select 1 from unnest(coalesce(p.proconfig,'{}'::text[])) setting where setting like 'search_path=%')
+  ),
+  'every public SECURITY DEFINER function fixes search_path'
+);
+select ok(
+  not exists(
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace
+    cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+    where n.nspname='public' and p.prosecdef and acl.grantee=0 and acl.privilege_type='EXECUTE'
+  ),
+  'PUBLIC cannot execute any public SECURITY DEFINER function'
+);
 
 select * from finish();
 rollback;

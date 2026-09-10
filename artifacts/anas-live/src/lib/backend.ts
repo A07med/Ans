@@ -59,7 +59,7 @@ class DemoBackend implements LiveBackend {
     if (!name || !phone) throw new Error('invalid_registration');
     const store = this.read();
     const existing = Object.values(store.participants).find((entry) => entry.phone === phone);
-    if (existing) return { token: existing.token, participantId: existing.participantId, name: existing.name };
+    if (existing) throw new Error('already_registered');
     if (!store.state.registrationOpen) throw new Error('registration_closed');
     const session: ParticipantSession = { token: uuid() + uuid(), participantId: uuid(), name };
     store.participants[session.token] = { ...session, phone, stayAliveStatus: null, wamdaAttempt: 'none', reactionMs: null };

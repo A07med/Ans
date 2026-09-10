@@ -5,6 +5,7 @@ import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { backend, APP_MODE } from '@/lib/backend';
 import type { AdminAction, AdminIdentity, AdminLog, LiveState, ParticipantView, WamdaResult } from '@/lib/live-types';
+import { registrationErrorMessage } from '@/lib/registration-errors';
 
 const PARTICIPANT_TOKEN_KEY = 'anas-participant-token-v1';
 
@@ -46,17 +47,21 @@ function PublicHome() {
 function JoinPage() {
   const { state, loading, error } = useLiveState(); const [, navigate] = useLocation();
   const [form, setForm] = useState({ name: '', phone: '' }); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true); const [sessionCheckFailed, setSessionCheckFailed] = useState(false);
   useEffect(() => {
-    const token = localStorage.getItem(PARTICIPANT_TOKEN_KEY); if (!token) return;
-    void backend.validateParticipant(token).then((participant) => { if (participant) navigate('/play', { replace: true }); else localStorage.removeItem(PARTICIPANT_TOKEN_KEY); }).catch(() => undefined);
+    const token = localStorage.getItem(PARTICIPANT_TOKEN_KEY); if (!token) { setCheckingSession(false); return; }
+    void backend.validateParticipant(token)
+      .then((participant) => { if (participant) navigate('/play', { replace: true }); else { localStorage.removeItem(PARTICIPANT_TOKEN_KEY); setCheckingSession(false); } })
+      .catch(() => { setSessionCheckFailed(true); setCheckingSession(false); });
   }, [navigate]);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setMessage('');
     try { const session = await backend.register(form.name, form.phone); localStorage.setItem(PARTICIPANT_TOKEN_KEY, session.token); navigate('/play', { replace: true }); }
-    catch (cause) { const text = cause instanceof Error ? cause.message : ''; setMessage(text.includes('closed') ? 'اكتمل التسجيل لهذه الفقرة' : text.includes('invalid') ? 'تأكد من الاسم ورقم هاتف عُماني صحيح' : 'تعذّر التسجيل الآن. حاول مرة أخرى.'); }
+    catch (cause) { setMessage(registrationErrorMessage(cause)); }
     finally { setBusy(false); }
   };
-  if (loading) return <Atmosphere><Loading /></Atmosphere>;
+  if (loading || checkingSession) return <Atmosphere><Loading /></Atmosphere>;
+  if (sessionCheckFailed) return <Atmosphere><main className="grid min-h-screen place-items-center p-6"><BackendUnavailable /></main></Atmosphere>;
   if (error && !state) return <Atmosphere><main className="grid min-h-screen place-items-center p-6"><BackendUnavailable /></main></Atmosphere>;
   return <Atmosphere><main className="public-page">
     <section className="join-card fade-in">
