@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API contract for Anas Live event control and participant state
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: event
+    description: Shared live event state
+  - name: participants
+    description: Audience registration
+  - name: games
+    description: Game control and attempts
 paths:
   /healthz:
     get:
@@ -24,6 +30,104 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /event/state:
+    get:
+      operationId: getEventState
+      tags: [event]
+      summary: Get the current event state
+      responses:
+        "200":
+          description: Current event state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventState"
+  /event/summary:
+    get:
+      operationId: getEventSummary
+      tags: [event]
+      summary: Get live operator summary
+      responses:
+        "200":
+          description: Live operator summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventSummary"
+  /participants:
+    post:
+      operationId: registerParticipant
+      tags: [participants]
+      summary: Register a participant once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParticipantInput"
+      responses:
+        "201":
+          description: Registered participant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Participant"
+        "409":
+          description: Phone number already registered
+  /admin/actions:
+    post:
+      operationId: executeAdminAction
+      tags: [event]
+      summary: Execute a safe operator action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminActionInput"
+      responses:
+        "200":
+          description: Updated event state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventState"
+  /games/stay-alive/round:
+    post:
+      operationId: executeStayAliveRound
+      tags: [games]
+      summary: Execute one server-side Stay Alive round
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StayAliveRoundInput"
+      responses:
+        "200":
+          description: Updated event state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventState"
+  /games/wamda/attempt:
+    post:
+      operationId: submitWamdaAttempt
+      tags: [games]
+      summary: Submit one participant reaction attempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WamdaAttemptInput"
+      responses:
+        "200":
+          description: Updated participant-facing event state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventState"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +137,141 @@ components:
           type: string
       required:
         - status
+    EventState:
+      type: object
+      required:
+        - registrationOpen
+        - currentExperience
+        - activeGame
+        - gameStatus
+        - stageMode
+        - registered
+        - connected
+        - stayAliveRemaining
+        - wamdaReady
+        - updatedAt
+      properties:
+        registrationOpen:
+          type: boolean
+        currentExperience:
+          type: string
+          enum: [lobby, stay_alive, intermission, wamda, end]
+        activeGame:
+          type: ["string", "null"]
+          enum: [stay_alive, wamda, null]
+        gameStatus:
+          type: string
+          enum: [idle, live, paused, selection, revealed, complete]
+        stageMode:
+          type: string
+          enum: [lobby, alive, wamda, end]
+        registered:
+          type: integer
+        connected:
+          type: integer
+        stayAliveRemaining:
+          type: integer
+        stayAliveRound:
+          type: integer
+        stayAliveWinner:
+          type: ["string", "null"]
+        wamdaReady:
+          type: integer
+        wamdaResponses:
+          type: integer
+        wamdaFalseStarts:
+          type: integer
+        wamdaFastestMs:
+          type: ["integer", "null"]
+        wamdaWinner:
+          type: ["string", "null"]
+        wamdaSignal:
+          type: string
+          enum: [idle, red, green, closed]
+        updatedAt:
+          type: string
+          format: date-time
+    EventSummary:
+      allOf:
+        - $ref: "#/components/schemas/EventState"
+        - type: object
+          required: [eventLog]
+          properties:
+            eventLog:
+              type: array
+              items:
+                $ref: "#/components/schemas/EventLogEntry"
+    EventLogEntry:
+      type: object
+      required: [id, label, detail, time]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        detail:
+          type: string
+        time:
+          type: string
+    ParticipantInput:
+      type: object
+      required: [name, phone]
+      properties:
+        name:
+          type: string
+          minLength: 2
+        phone:
+          type: string
+          minLength: 6
+    Participant:
+      type: object
+      required: [id, name, token]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        token:
+          type: string
+    AdminActionInput:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum:
+            - open_registration
+            - close_registration
+            - start_stay_alive
+            - pause
+            - return_lobby
+            - open_wamda
+            - arm_wamda
+            - cancel_arm
+            - close_wamda
+            - select_result
+            - reveal_winner
+            - reset_game
+    StayAliveRoundInput:
+      type: object
+      required: [targetSurvivors]
+      properties:
+        targetSurvivors:
+          type: integer
+          minimum: 1
+    WamdaAttemptInput:
+      type: object
+      required: [participantToken, sessionId, signalId, reactionMs, falseStart]
+      properties:
+        participantToken:
+          type: string
+        sessionId:
+          type: string
+        signalId:
+          type: string
+        reactionMs:
+          type: integer
+          minimum: 0
+        falseStart:
+          type: boolean
 

@@ -5,7 +5,8 @@
  * API contract for Anas Live event control and participant state
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminActionInputAction } from './adminActionInputAction';
 
-export interface HealthStatus {
-  status: string;
+export interface AdminActionInput {
+  action: AdminActionInputAction;
 }

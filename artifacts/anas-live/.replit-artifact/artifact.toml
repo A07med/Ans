@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "أُنس Live"
+description = "An Arabic-first live event experience for the College of Science student activities opening evening, with one-time participant registration, live game states, admin control, and projector-ready stage screens."
+version = "1.0.0"
+id = "artifacts/anas-live"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22509
+
+[services.development]
+run = "pnpm --filter @workspace/anas-live run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/anas-live", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/anas-live/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22509"
+BASE_PATH = "/"

@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface WamdaAttemptInput {
+  participantToken: string;
+  sessionId: string;
+  signalId: string;
+  /** @minimum 0 */
+  reactionMs: number;
+  falseStart: boolean;
 }

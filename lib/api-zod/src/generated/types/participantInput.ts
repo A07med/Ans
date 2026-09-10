@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface ParticipantInput {
+  /** @minLength 2 */
+  name: string;
+  /** @minLength 6 */
+  phone: string;
 }

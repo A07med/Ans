@@ -1,0 +1,1756 @@
+You are acting as a Senior Full-Stack Engineer, Senior Product Designer, Real-Time Systems Engineer, QA Engineer, and Event Experience Designer.
+
+Your job is to design and build a complete production-quality interactive web experience for the opening evening of the Student Activities Group at the College of Science.
+
+EVENT NAME:
+أُنس
+
+PROJECT NAME:
+أُنس Live
+Anas Live
+
+IMPORTANT:
+I am attaching official visual identity/reference images for the event "أُنس".
+Study them carefully before designing anything.
+
+The supplied identity images are the PRIMARY visual source of truth.
+
+The application must feel like it belongs naturally inside the same event identity — not like a generic SaaS dashboard, gaming website, or neon tech application.
+
+==================================================
+0. MISSION
+==================================================
+
+Build ONE complete web application that supports:
+
+1. One-time audience registration.
+2. One persistent participant mobile experience.
+3. One admin control dashboard.
+4. Two completely different live interactive raffle/game experiences:
+   - باقي معنا؟
+   - وَمْضَة
+5. Two dedicated 16:9 stage/projector screens.
+6. Real-time synchronization between:
+   - Admin
+   - Audience phones
+   - Stage screen
+7. Supabase backend.
+8. Portable architecture that can later be downloaded from Replit and deployed to Vercel.
+
+The audience registers ONLY ONCE.
+
+The same participant identity must work for both games.
+
+Participants eliminated from Game 1 MUST still be eligible for Game 2.
+
+Do not build two separate registration systems.
+
+==================================================
+1. CRITICAL PORTABILITY REQUIREMENT
+==================================================
+
+Replit is ONLY the development environment.
+
+DO NOT use:
+
+- Replit Database
+- Replit Auth
+- Replit Object Storage as a required dependency
+- Replit-specific server APIs
+- Replit-specific deployment architecture
+- Any feature that prevents us from downloading the source and deploying it elsewhere
+
+The final source code must be portable.
+
+Preferred stack:
+
+Frontend:
+- React
+- Vite
+- TypeScript
+
+Styling:
+- Tailwind CSS
+
+Backend:
+- Supabase
+
+Database:
+- Supabase PostgreSQL
+
+Realtime:
+- Supabase Realtime
+
+Admin authentication:
+- Supabase Auth
+
+Hosting during development:
+- Replit preview
+
+Future production hosting:
+- Vercel
+
+Use standard environment variables:
+
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+
+NEVER expose:
+SUPABASE_SERVICE_ROLE_KEY
+
+inside frontend code.
+
+Privileged game operations must be executed securely through:
+- protected Supabase RPC/functions
+or
+- Supabase Edge Functions
+
+Do not put privileged raffle logic directly in the browser.
+
+==================================================
+2. LANGUAGE AND DIRECTION
+==================================================
+
+The public audience experience should be primarily Arabic.
+
+Direction:
+RTL
+
+Use polished Arabic microcopy.
+
+English may appear selectively as small supporting labels where aesthetically appropriate.
+
+Examples:
+
+أُنس LIVE
+CONNECTED
+ROUND 03
+SIGNAL ACTIVE
+
+But Arabic should remain dominant.
+
+==================================================
+3. VISUAL DIRECTION — VERY IMPORTANT
+==================================================
+
+Study the attached "أُنس" identity images.
+
+The application must visually inherit that world.
+
+The identity appears warm, intimate, nostalgic, cinematic and slightly mysterious.
+
+Use visual inspiration such as:
+
+- deep burgundy
+- dark brown
+- warm black
+- sand / cream
+- muted warm reds
+- subtle golden/warm highlights
+
+Use the attached images to derive the final palette instead of guessing arbitrary colors.
+
+Visual language should reference:
+
+- traditional seating / majlis atmosphere
+- carpets
+- fabric
+- old television
+- old radio
+- silhouettes
+- warm low lighting
+- shadows
+- subtle texture
+- analog nostalgia
+- quiet cinematic atmosphere
+
+DO NOT create:
+
+- cyberpunk visuals
+- bright neon blue
+- futuristic gamer UI
+- generic startup gradients
+- random glassmorphism
+- generic purple SaaS dashboard
+- overly colorful UI
+
+Technology should feel HIDDEN INSIDE the world of أُنس.
+
+Think:
+
+"an old analog atmosphere secretly powered by a modern real-time system."
+
+Use subtle effects such as:
+
+- film grain
+- analog noise
+- CRT/static transitions where appropriate
+- very subtle flicker
+- carpet/fabric inspired patterns
+- soft shadows
+- warm vignette
+- old-device indicator lights
+- cinematic transitions
+
+Do not overuse effects.
+
+Readability on projectors and phones is more important than decoration.
+
+==================================================
+4. RESPONSIVE TARGETS
+==================================================
+
+Design three distinct modes:
+
+A. MOBILE PARTICIPANT
+Typical phone portrait.
+
+B. ADMIN DASHBOARD
+Laptop/Desktop.
+
+C. STAGE DISPLAY
+16:9 projector/screen.
+Must look excellent at:
+1920x1080.
+
+Stage UI elements must be large enough to read from the back of a hall.
+
+Do NOT simply stretch mobile UI onto the projector.
+
+Design stage screens independently.
+
+==================================================
+5. APPLICATION ROUTES
+==================================================
+
+Build at least:
+
+/join
+/play
+
+/admin
+
+/stage/alive
+/stage/wamda
+
+Optionally:
+
+/admin/login
+
+Add a simple not-found route.
+
+==================================================
+6. ONE-TIME REGISTRATION
+==================================================
+
+At the beginning of the evening, a QR code points to:
+
+/join
+
+Registration form:
+
+أهلًا بك في أُنس
+
+Fields:
+
+الاسم
+رقم الهاتف
+
+Button:
+
+دخول أُنس
+
+Keep the process extremely fast.
+
+No account password.
+No email.
+No complicated onboarding.
+
+Phone number should be normalized before storing.
+
+Prevent accidental duplicate registrations.
+
+A phone number should normally correspond to one participant.
+
+Store participant identity locally using a secure randomly generated participant token / ID so refreshing the browser does not create another participant.
+
+After registration:
+
+✓ تم تسجيلك
+
+Then automatically redirect to:
+
+/play
+
+The participant should never need to register again for either game.
+
+Privacy:
+
+Never display full phone numbers publicly on stage.
+
+If phone information needs to appear inside admin:
+mask it appropriately when practical.
+
+==================================================
+7. PARTICIPANT PERSISTENT EXPERIENCE
+==================================================
+
+The participant keeps:
+
+/play
+
+open throughout the evening.
+
+This page reacts automatically to the current event/game state.
+
+Possible states:
+
+LOBBY
+ALIVE_GAME
+ALIVE_ELIMINATED
+ALIVE_SURVIVED
+ALIVE_FINALIST
+ALIVE_WINNER
+INTERMISSION
+WAMDA_WAITING
+WAMDA_ARMED
+WAMDA_GREEN
+WAMDA_FALSE_START
+WAMDA_RESULT
+WAMDA_WINNER
+EVENT_END
+
+The participant should NOT navigate manually between game URLs.
+
+Admin controls the current experience.
+
+Supabase Realtime should push state changes.
+
+When a participant refreshes or loses/reconnects internet:
+
+- recover participant identity
+- fetch current server state
+- show the correct screen again
+
+Do not leave them stuck on a stale screen.
+
+==================================================
+8. DEFAULT LOBBY MOBILE SCREEN
+==================================================
+
+After registration display something elegant and minimal:
+
+أهلًا بك في أُنس
+
+تم تسجيلك ✓
+
+خلك قريب...
+يمكن نحتاجك بعد شوي 👀
+
+Optional small status:
+
+متصل
+
+Do not show technical/debug information.
+
+==================================================
+9. GAME ONE
+==================================================
+
+GAME NAME:
+
+باقي معنا؟
+
+Internal identifier:
+stay_alive
+
+Concept:
+
+All registered eligible participants begin alive.
+
+The admin starts rounds.
+
+Each round randomly eliminates a configurable portion of remaining participants.
+
+Example progression:
+
+487
+↓
+243
+↓
+100
+↓
+25
+↓
+10
+↓
+3
+↓
+1
+
+The exact progression is controlled by admin.
+
+==================================================
+10. GAME ONE — PARTICIPANT EXPERIENCE
+==================================================
+
+At activation, every eligible participant phone should transition dramatically but elegantly into:
+
+باقي معنا؟
+
+and initially:
+
+أنت معنا 🟢
+
+or:
+
+باقي معنا
+
+Use the "signal / connection" metaphor.
+
+SURVIVOR copy examples:
+
+باقي معنا 🟢
+
+استعد للجولة القادمة
+
+ELIMINATED copy:
+
+انقطعت إشارتك
+
+خرجت من هذا السحب
+
+نشوفك في وَمْضَة 👀
+
+IMPORTANT:
+Being eliminated from باقي معنا؟ must NOT remove the participant from وَمْضَة.
+
+For finalists:
+
+أنت من آخر 3 🔥
+
+لا تقفل الصفحة
+
+For the winner:
+
+أنت الفائز 🎉
+
+with a premium but tasteful celebration animation.
+
+==================================================
+11. GAME ONE — STAGE EXPERIENCE
+==================================================
+
+Route:
+
+/stage/alive
+
+This screen must feel cinematic and suspenseful.
+
+Initial state could show:
+
+باقي معنا؟
+
+487
+باقي معنا
+
+When a round happens, animate the number falling down.
+
+For example:
+
+487
+→
+243
+
+Do not instantly jump if a transition would improve drama.
+
+Possible stage sequence:
+
+الجولة الأولى
+
+487
+
+then animated reduction
+
+243
+
+باقي معنا
+
+At final 3:
+
+ثلاثة فقط
+باقي معنا
+
+Do not reveal their names unless admin intentionally chooses to.
+
+Final sequence:
+
+3
+2
+1
+
+then winner reveal.
+
+Winner stage:
+
+اسم الفائز
+
+and optionally:
+
+باقي معنا حتى النهاية
+
+Use event identity rather than confetti overload.
+
+A refined warm celebration is preferred.
+
+==================================================
+12. GAME ONE — RANDOMNESS AND FAIRNESS
+==================================================
+
+DO NOT perform random elimination using client-side:
+
+Math.random()
+
+The browser must not decide winners.
+
+Create the result on the backend/server side.
+
+Each round should persist:
+
+- game_id
+- round_number
+- number_before
+- number_after
+- participants eliminated
+- participants surviving
+- timestamp
+- admin action
+- final winner if applicable
+
+Random selection should happen atomically on the backend.
+
+Use a strong server-side method appropriate for a student-event raffle.
+
+Avoid race conditions.
+
+An admin accidentally double-clicking "Next Round" must NOT execute two rounds.
+
+Add transaction / idempotency protections.
+
+==================================================
+13. GAME ONE — ADMIN CONTROLS
+==================================================
+
+Inside /admin:
+
+Card:
+
+باقي معنا؟
+
+Show:
+
+المسجلون
+المتبقون
+المستبعدون
+الجولة الحالية
+الحالة
+
+Controls:
+
+بدء اللعبة
+الجولة التالية
+إيقاف مؤقت
+إظهار النتيجة
+إنهاء اللعبة
+عودة إلى الانتظار
+
+For Next Round allow a simple choice:
+
+Keep:
+75%
+50%
+25%
+
+and/or manually define target survivor count:
+
+مثلاً:
+487 → 250
+250 → 100
+100 → 25
+25 → 10
+10 → 3
+
+For final 3 provide:
+
+DRAW FINAL WINNER
+
+but do not reveal instantly on stage until admin chooses:
+
+REVEAL WINNER
+
+Separate:
+selection
+from
+reveal
+
+This gives the presenter control over timing.
+
+==================================================
+14. GAME TWO
+==================================================
+
+GAME NAME:
+
+وَمْضَة
+
+Internal identifier:
+wamda
+
+Concept:
+
+This is a reaction-speed game.
+
+Everyone who registered at the event is eligible again, independent of Game 1 results.
+
+Participants wait for a red signal.
+
+When the signal turns green:
+
+PRESS.
+
+Fastest valid reaction wins.
+
+==================================================
+15. GAME TWO — MOBILE EXPERIENCE
+==================================================
+
+When admin activates وَمْضَة, /play automatically transforms.
+
+Show:
+
+وَمْضَة
+
+جهّز إصبعك
+
+اضغط فقط لما تتغير الإشارة
+
+Then a VERY LARGE circular or tactile button.
+
+Initial state:
+
+RED
+
+Text:
+
+انتظر...
+
+The red button should look inspired by an indicator lamp on an old radio/device rather than a modern arcade button.
+
+When the green event is received:
+
+RED
+→
+GREEN
+
+Text changes instantly to:
+
+اضغط!
+
+Participant taps.
+
+Record reaction.
+
+After a valid response:
+
+تم تسجيل وقتك
+
+0.247 ثانية
+
+Do NOT show their ranking immediately.
+
+Keep suspense for the stage.
+
+==================================================
+16. FALSE START
+==================================================
+
+If a participant taps while the signal is still red:
+
+They are disqualified from that round.
+
+Display:
+
+استعجلت! 😭
+
+ضغطت قبل الومضة
+
+خرجت من هذه الجولة
+
+Do not allow a second attempt.
+
+Show stage aggregate:
+
+مثلاً:
+
+23 استعجلوا 👀
+
+Do NOT publicly identify them.
+
+==================================================
+17. WAMDA TIMING MODEL
+==================================================
+
+This needs careful engineering.
+
+We want the game to measure reaction speed, not simply:
+
+"whose internet request reached Supabase first."
+
+When the green trigger reaches a device:
+
+Record a local high-resolution monotonic timestamp using an appropriate browser API such as:
+
+performance.now()
+
+When the participant taps:
+
+record another local timestamp.
+
+Reaction time:
+
+tapTime - greenReceivedTime
+
+Send the result to the server.
+
+Persist:
+
+participant_id
+game_session_id
+green_event_id
+reaction_ms
+submission_received_at
+false_start
+valid
+integrity flags
+
+The backend must validate:
+
+- participant exists
+- participant is eligible
+- game is active
+- correct game session
+- exactly one attempt
+- green signal was issued
+- no duplicate submission
+- reaction is within plausible bounds
+
+Clearly flag suspicious impossible results.
+
+For example, extremely low reaction times should not automatically win without integrity checks.
+
+Do NOT rely exclusively on client-provided values without sanity validation.
+
+For this student event, we do not need anti-cheat equivalent to professional esports, but we do want sensible integrity controls.
+
+For equal/near-equal valid reaction results, use a clearly defined tie-break rule.
+
+Document this rule.
+
+==================================================
+18. WAMDA — RANDOM DELAY
+==================================================
+
+The admin should NOT directly determine the exact green moment.
+
+Workflow:
+
+1. Admin presses:
+ARM
+
+2. Game enters armed state.
+
+3. System chooses a random delay, e.g.:
+
+2–7 seconds
+
+4. After that delay, the server broadcasts the green event.
+
+The admin should not know the exact delay.
+
+This reduces anticipation based on the admin's physical movement.
+
+Stage and participant phones must respond to the same game event.
+
+==================================================
+19. WAMDA — STAGE
+==================================================
+
+Route:
+
+/stage/wamda
+
+Make it visually distinct from Game 1 while still belonging to أُنس.
+
+Minimal screen.
+
+Before activation:
+
+وَمْضَة
+
+421 جاهزين
+
+Then:
+
+large RED analog-style signal lamp.
+
+Text:
+
+انتظر الومضة...
+
+When green is triggered:
+
+large GREEN signal.
+
+Very brief:
+
+الآن!
+
+After responses:
+
+تم تسجيل 398 استجابة
+
+23 استعجلوا 👀
+
+Then admin can trigger reveal.
+
+Reveal sequence:
+
+جارٍ البحث عن أسرع ومضة...
+
+Animate reaction values, for example:
+
+0.782
+0.514
+0.342
+0.247
+0.198
+
+Then stop:
+
+0.198 ثانية
+
+Pause.
+
+Then:
+
+اسم الفائز
+
+أسرع ومضة في أُنس
+
+Keep this reveal cinematic.
+
+==================================================
+20. WAMDA ADMIN CONTROLS
+==================================================
+
+Inside the same /admin dashboard:
+
+وَمْضَة
+
+Show:
+
+Registered
+Connected
+Ready
+Responses
+False Starts
+Valid Responses
+Fastest valid reaction
+
+Controls:
+
+OPEN WAMDA
+ARM
+CANCEL ARM
+CLOSE ROUND
+SELECT RESULT
+REVEAL WINNER
+RETURN TO LOBBY
+
+IMPORTANT:
+
+SELECT RESULT and REVEAL WINNER should be separate.
+
+The admin must be able to build suspense.
+
+==================================================
+21. STAGE SCREEN CONTROL
+==================================================
+
+We have TWO dedicated stage routes:
+
+/stage/alive
+/stage/wamda
+
+Do not combine them into the same generic design.
+
+They should each have custom animation and composition.
+
+However, both must use:
+
+- same event identity
+- same color system
+- same typography
+- same texture language
+- same logo treatment
+
+Create a small stage status indicator in development mode if useful, but hide debug controls in production.
+
+==================================================
+22. ADMIN DASHBOARD
+==================================================
+
+The admin dashboard should be functional first, aesthetic second.
+
+Still style it using the أُنس palette.
+
+Do NOT make it overly artistic if that hurts usability.
+
+Header:
+
+أُنس LIVE CONTROL
+
+Show at a glance:
+
+Total Registered
+Connected Now
+Current Experience
+Game Status
+
+Main areas:
+
+REGISTRATION
+
+باقي معنا؟
+
+وَمْضَة
+
+SYSTEM STATUS
+
+EVENT LOG
+
+Provide large clear buttons that can be operated under pressure during a live event.
+
+Dangerous controls require confirmation.
+
+Examples:
+
+Reset Game
+Reset Event
+Delete Participants
+
+must not happen from one accidental click.
+
+==================================================
+23. EVENT MASTER STATE
+==================================================
+
+Create a single source of truth for event state.
+
+For example:
+
+registration_open
+current_experience
+active_game
+game_status
+stage_mode
+updated_at
+
+Possible current experience values:
+
+lobby
+stay_alive
+intermission
+wamda
+end
+
+All clients subscribe and update in real time.
+
+Do not scatter conflicting state across unrelated local components.
+
+==================================================
+24. REGISTRATION CONTROL
+==================================================
+
+Admin should be able to:
+
+OPEN REGISTRATION
+CLOSE REGISTRATION
+
+Display:
+
+Registered: XXX
+Connected now: XXX
+
+If registration is closed and an unregistered person visits /join:
+
+عرض:
+
+اكتمل التسجيل لهذه الفقرة
+
+If they were already registered on that device:
+
+allow them into /play.
+
+==================================================
+25. OPTIONAL SAME QR REUSE
+==================================================
+
+We only want ONE registration.
+
+If the same QR is shown again later in the evening for convenience:
+
+it should still point to /join.
+
+An already registered participant should automatically be recognized and redirected to /play.
+
+Never ask them to register twice.
+
+==================================================
+26. REALTIME CONNECTION
+==================================================
+
+Use Supabase Realtime thoughtfully.
+
+Avoid creating excessive subscriptions.
+
+Participants need near-live updates for:
+
+- active experience
+- Game 1 result
+- Game 2 state
+- green trigger
+- reveal / final state
+
+Implement reconnect behavior.
+
+If Realtime fails temporarily:
+
+fall back to a reasonable lightweight state refresh mechanism where appropriate.
+
+Display no ugly system errors to normal participants.
+
+==================================================
+27. DATABASE DESIGN
+==================================================
+
+Design the database properly.
+
+Likely entities include:
+
+participants
+event_state
+game_sessions
+
+stay_alive_rounds
+stay_alive_entries/results
+
+wamda_attempts
+
+admin_action_log
+
+You may improve this schema if there is a cleaner normalized architecture.
+
+Requirements:
+
+- UUID primary keys
+- created_at / updated_at where appropriate
+- unique constraints where appropriate
+- foreign keys
+- indexes for queries used live
+- server timestamps
+- no arbitrary duplicated state
+
+Provide SQL migrations in the repository.
+
+==================================================
+28. SECURITY
+==================================================
+
+Security requirements:
+
+Participants:
+do not require Supabase user accounts.
+
+Admins:
+must authenticate.
+
+Use Supabase Auth for admin access.
+
+Protect admin operations server-side.
+
+Do not trust a hidden button in the frontend as security.
+
+Enable RLS.
+
+Participants must NOT be able to:
+
+- eliminate others
+- change event state
+- start games
+- reveal winners
+- change reaction results
+- read other participants' phone numbers
+- read private admin logs
+
+Admin-only actions must require authenticated authorization.
+
+No service role key in client bundle.
+
+==================================================
+29. ADMIN ROLE
+==================================================
+
+Keep admin setup simple.
+
+Document exactly how to create/authorize the first admin.
+
+A simple allow-listed admin user or admin profile role is sufficient.
+
+No need to build enterprise RBAC.
+
+==================================================
+30. PRIVACY
+==================================================
+
+We collect:
+
+Name
+Phone
+
+Only because we need participant identification/deduplication/winner contact.
+
+Do not expose phone numbers publicly.
+
+Stage shows:
+
+name only
+
+or optionally first name + masked identifier if needed.
+
+Do not add unnecessary analytics trackers.
+
+==================================================
+31. ERROR HANDLING
+==================================================
+
+Handle:
+
+- duplicate phone
+- refresh during game
+- connection loss
+- event state changing while page is backgrounded
+- admin double click
+- Realtime reconnection
+- participant submitting twice
+- false start
+- stage browser refresh
+- admin browser refresh
+- no participants
+- only one participant
+- insufficient survivors
+- Wamda no valid responses
+- exact/near tie
+- invalid reaction values
+
+The UI must recover gracefully.
+
+==================================================
+32. LIVE EVENT RELIABILITY
+==================================================
+
+This will be used in a REAL auditorium.
+
+Reliability is more important than fancy complexity.
+
+Keep dependencies minimal.
+
+Avoid experimental libraries.
+
+Avoid animations that consume excessive CPU on hundreds of phones.
+
+Stage can have richer animations than participant devices.
+
+Phones should remain lightweight.
+
+Do not send giant images on every state change.
+
+Optimize attached event imagery if used.
+
+==================================================
+33. ACCESSIBILITY / USABILITY
+==================================================
+
+Reaction game color cannot rely ONLY on color.
+
+RED state should also say:
+
+انتظر
+
+GREEN state:
+
+اضغط!
+
+Buttons must be large.
+
+Text must have strong contrast.
+
+Prevent accidental browser text selection around the reaction control.
+
+Design for Android and iPhone.
+
+==================================================
+34. SOUND
+==================================================
+
+Stage screen may optionally have subtle audio cues:
+
+- analog click
+- static
+- low signal tone
+- winner reveal sound
+
+But browser autoplay policies must be respected.
+
+Provide a manual:
+
+ENABLE SOUND
+
+control on the stage screen/admin if needed.
+
+The experience must work perfectly without sound.
+
+==================================================
+35. QR CODE
+==================================================
+
+Provide a clean QR component / printable QR page for /join.
+
+QR must be large enough for projector use.
+
+Allow admin to copy/download the join URL.
+
+Do not hardcode a Replit domain.
+
+Use runtime/environment origin where possible so the same project works on Vercel later.
+
+==================================================
+36. BRAND ASSETS
+==================================================
+
+Use the attached event identity images as references.
+
+If appropriate, create visual elements through CSS rather than cutting random sections of the images.
+
+Do NOT distort logos.
+
+Do NOT invent unofficial logos.
+
+If the actual أُنس logo can be extracted cleanly from provided files, use it carefully.
+
+Otherwise create a placeholder asset slot and clearly tell me which final brand asset should be added.
+
+==================================================
+37. MOTION DESIGN
+==================================================
+
+Create tasteful transitions.
+
+Examples:
+
+Game activation:
+subtle old-TV flicker.
+
+Stay Alive:
+numbers reduce with cinematic motion.
+
+Elimination:
+small signal fade.
+
+Wamda:
+red lamp → slight pulse → instant green.
+
+Winner:
+warm light / reveal.
+
+Animations should be approximately 150–1200ms depending on function.
+
+Do not slow down reaction-critical state changes.
+
+For Wamda:
+GREEN must appear immediately when the event is received.
+Do NOT wait for a decorative animation before enabling the tap.
+
+==================================================
+38. DEMO MODE
+==================================================
+
+Create a useful DEMO / TEST MODE accessible only to admin/development.
+
+Allow us to generate fake participants such as:
+
+20
+50
+100
+500
+
+for testing stage animations and Stay Alive rounds.
+
+Do not create real fake registrations mixed into production accidentally.
+
+Clearly label demo mode.
+
+For Wamda, allow simulation of responses to test ranking/reveal.
+
+This is extremely important because we need to test before the actual event.
+
+==================================================
+39. RESET / REHEARSAL
+==================================================
+
+We will rehearse the evening before the actual event.
+
+Provide safe controls:
+
+Reset Stay Alive only
+Reset Wamda only
+Reset current game session
+
+Keep participant registrations if requested.
+
+And separately:
+
+FULL EVENT RESET
+
+FULL EVENT RESET must require strong confirmation.
+
+==================================================
+40. SYSTEM STATUS
+==================================================
+
+Admin should see basic health indicators:
+
+Supabase connection
+Realtime connection
+Stage connected
+Approx connected participants
+
+Do not build a full enterprise observability system.
+
+We just need enough confidence during the event.
+
+==================================================
+41. ACTION LOG
+==================================================
+
+Log meaningful admin/game actions such as:
+
+registration opened
+registration closed
+Stay Alive started
+round executed
+number eliminated
+winner selected
+winner revealed
+Wamda armed
+green signal fired
+round closed
+winner selected
+winner revealed
+game reset
+
+This will help debug if anything goes wrong.
+
+==================================================
+42. UI COPY
+==================================================
+
+Use polished Arabic.
+
+Suggested copy:
+
+LOBBY:
+أهلًا بك في أُنس
+تم تسجيلك ✓
+خلك قريب...
+يمكن نحتاجك بعد شوي 👀
+
+STAY ALIVE:
+باقي معنا؟
+أنت معنا
+استعد للجولة القادمة
+
+ELIMINATED:
+انقطعت إشارتك
+خرجت من هذا السحب
+نشوفك في وَمْضَة 👀
+
+FINALIST:
+أنت من آخر 3
+لا تقفل الصفحة
+
+WAMDA:
+وَمْضَة
+جهّز إصبعك
+اضغط فقط لما تتغير الإشارة
+
+RED:
+انتظر...
+
+GREEN:
+اضغط!
+
+FALSE START:
+استعجلت!
+ضغطت قبل الومضة
+خرجت من هذه الجولة
+
+VALID:
+تم تسجيل وقتك
+0.247 ثانية
+
+STAGE WAMDA:
+انتظر الومضة...
+الآن!
+جارٍ البحث عن أسرع ومضة...
+
+WINNER:
+أسرع ومضة في أُنس
+
+Feel free to improve Arabic microcopy while keeping the same tone:
+short, warm, clever, youthful, not childish.
+
+==================================================
+43. DO NOT DO THESE THINGS
+==================================================
+
+Do not:
+
+- split this into two apps
+- require registration twice
+- use Replit database
+- depend on Replit hosting
+- expose secret keys
+- use client Math.random() for raffle winners
+- make eliminated Game 1 users ineligible for Game 2
+- make the UI cyberpunk
+- turn the identity into a generic gaming UI
+- expose phone numbers on stage
+- automatically reveal winners immediately
+- make admin workflow complicated
+- use excessive third-party packages
+- use placeholder lorem ipsum
+- leave unfinished fake buttons
+- leave TODOs for core functionality
+
+==================================================
+44. TESTS
+==================================================
+
+Add meaningful tests for core game logic.
+
+At minimum test:
+
+Registration deduplication
+
+Stay Alive:
+- all eligible participants start alive
+- server selects correct survivor count
+- eliminated user cannot re-enter same Stay Alive session
+- eliminated user remains eligible for Wamda
+- final winner is exactly one person
+- duplicate admin round request does not execute twice
+
+Wamda:
+- red tap = false start
+- valid green tap accepted
+- exactly one attempt per participant
+- duplicate result rejected
+- invalid/suspicious negative timing rejected
+- winner selected from valid results only
+- tie rule works
+
+Permissions:
+- public participant cannot call admin game operations
+
+Also test state recovery where feasible.
+
+==================================================
+45. QA
+==================================================
+
+Before declaring complete:
+
+Test mobile widths including approximately:
+
+320px
+375px
+390px
+430px
+
+Test admin desktop.
+
+Test stage:
+
+1280x720
+1920x1080
+
+Test Chrome.
+Test Safari-compatible behavior where possible.
+
+Verify RTL carefully.
+
+Check no content is clipped on common phones.
+
+==================================================
+46. LOAD / SCALE EXPECTATION
+==================================================
+
+Design for a few hundred concurrent participants.
+
+Expected ballpark:
+
+100–600 participants.
+
+Do not over-engineer for millions of users.
+
+But do avoid obvious N+1 realtime/database operations.
+
+Stay Alive bulk elimination should not send hundreds of inefficient admin-side mutation calls.
+
+Prefer backend batch/transaction logic.
+
+==================================================
+47. README
+==================================================
+
+Create a complete README.md covering:
+
+What the project is
+
+Architecture
+
+Routes
+
+Supabase setup
+
+Environment variables
+
+Database migration instructions
+
+How to create admin
+
+How to run locally
+
+How to run on Replit
+
+How to test
+
+Demo mode
+
+How to reset games
+
+How stage mode works
+
+How to use on the actual event night
+
+How to move from Replit to GitHub
+
+How to deploy to Vercel
+
+How to update VITE_SUPABASE_URL / key
+
+Security notes
+
+Troubleshooting
+
+==================================================
+48. EVENT NIGHT RUNBOOK
+==================================================
+
+Create:
+
+docs/EVENT_NIGHT_RUNBOOK.md
+
+Make it very practical.
+
+Example sequence:
+
+BEFORE EVENT
+- verify Supabase
+- verify Vercel
+- open admin
+- open stage routes
+- enable sound if desired
+- test QR
+- test one phone
+
+REGISTRATION
+- OPEN REGISTRATION
+- display QR
+- monitor participants
+- CLOSE when appropriate
+
+GAME 1
+- activate باقي معنا؟
+- execute rounds
+- reach final 3
+- select winner
+- presenter countdown
+- reveal
+
+INTERMISSION
+- return phones to lobby
+
+GAME 2
+- activate وَمْضَة
+- verify ready count
+- ARM
+- random delay
+- receive reactions
+- close
+- select fastest valid participant
+- presenter builds suspense
+- reveal
+
+END
+- return to end/lobby screen
+
+Include an emergency fallback if Realtime temporarily fails.
+
+==================================================
+49. PORTABILITY CHECK
+==================================================
+
+Before completion, explicitly verify:
+
+npm install
+npm run dev
+npm run build
+
+work without Replit-specific assumptions.
+
+The project must generate a normal Vite build.
+
+No dependency should require a Replit runtime.
+
+Create:
+
+.env.example
+
+Do not commit secrets.
+
+==================================================
+50. DEVELOPMENT PROCESS
+==================================================
+
+Work autonomously.
+
+Do not stop after merely creating mockups.
+
+Do not only explain what should be built.
+
+Actually implement the application.
+
+Suggested order:
+
+Architecture
+Database schema/migrations
+Core state model
+Registration
+Participant state
+Admin authentication
+Admin dashboard
+Stay Alive backend logic
+Stay Alive mobile
+Stay Alive stage
+Wamda backend logic
+Wamda mobile
+Wamda stage
+Realtime
+Brand polish
+Demo mode
+Tests
+QA
+Documentation
+
+You may adjust order intelligently.
+
+If Supabase credentials are not available yet:
+
+DO NOT stop the entire project.
+
+Build the application architecture and UI with a clean development mock adapter.
+
+Create all SQL/migrations/configuration needed.
+
+Clearly identify the exact secrets/configuration I need to provide.
+
+Once secrets are available, wire the real adapter without rewriting the app.
+
+Do not embed fake production data.
+
+==================================================
+51. VISUAL REVIEW CHECK
+==================================================
+
+Before finishing, compare the result again against the three attached أُنس identity references.
+
+Ask yourself:
+
+Does this look like a digital extension of أُنس?
+
+Or does it look like a random technology event?
+
+If it looks generic, redesign it before declaring completion.
+
+The final experience should feel:
+
+warm
+nostalgic
+cinematic
+mysterious
+social
+youthful
+premium
+simple
+
+The technology should create surprise without destroying the identity.
+
+==================================================
+52. FINAL DELIVERABLE
+==================================================
+
+When you have finished, give me a concise final report containing:
+
+1. Overall status: COMPLETE / BLOCKED
+2. What was built
+3. Project structure
+4. Database/migration status
+5. Environment variables still required
+6. Replit preview URL if available
+7. Admin access/setup instructions
+8. Audience join URL
+9. Stage Alive URL
+10. Stage Wamda URL
+11. Test results
+12. Build result
+13. Known limitations
+14. Exact next steps for me
+15. Confirmation that the project can be downloaded and deployed to Vercel without Replit dependencies
+
+Do not deploy to a final production domain or perform destructive production operations without explicit owner approval.
+
+The immediate objective is a complete, working PREVIEW version that we can test with real phones.
+
+Build it now.
