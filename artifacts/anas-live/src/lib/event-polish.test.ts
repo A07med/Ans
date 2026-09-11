@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  adminActionErrorMessage,
   canClearRegistrations,
   CLEAR_REGISTRATIONS_PHRASE,
   countAnimationDuration,
@@ -71,7 +72,8 @@ describe('Stay Alive stage presentation', () => {
     expect(frames.has(250)).toBe(true);
   });
   it('honors reduced motion by disabling interpolation', () => expect(shouldAnimateCount(20, 10, true)).toBe(false));
-  it('provides every requested guided quick target', () => expect(stayAliveQuickTargets(42).map(({ label }) => label)).toEqual(['75%', '50%', '25%', 'آخر 10', 'آخر 5', 'آخر 3']));
+  it('provides every requested operator quick target', () => expect(stayAliveQuickTargets(42).map(({ label }) => label)).toEqual(['إبقاء 75%', 'إبقاء 50%', 'إبقاء 25%', 'آخر 20', 'آخر 10', 'آخر 5', 'آخر 3', 'فائز واحد']));
+  it('keeps invalid quick targets visible for state-aware disabling', () => expect(stayAliveQuickTargets(3)).toHaveLength(8));
 });
 
 describe('event transition audio', () => {
@@ -88,10 +90,18 @@ describe('event transition audio', () => {
     expect(participantTransitionCues(state(), state(), before, after)).toContain('valid-tap');
     expect(participantTransitionCues(state(), state(), after, after)).toEqual([]);
   });
+  it('plays a Stay Alive winner cue even when participant state arrives after event reveal', () => {
+    const revealed = state({ activeGame: 'stay_alive', currentExperience: 'stay_alive', gameStatus: 'revealed' });
+    const before = participant({ stayAliveStatus: 'finalist' });
+    const winner = participant({ stayAliveStatus: 'winner' });
+    expect(participantTransitionCues(revealed, revealed, before, winner)).toContain('winner');
+    expect(participantTransitionCues(revealed, revealed, winner, winner)).toEqual([]);
+  });
   it('separates enable, playing, and muted controls', () => {
-    expect(soundControlState(false, false)).toBe('enable');
-    expect(soundControlState(true, false)).toBe('playing');
-    expect(soundControlState(true, true)).toBe('muted');
+    expect(soundControlState('absent', false)).toBe('enable');
+    expect(soundControlState('suspended', false)).toBe('resume');
+    expect(soundControlState('running', false)).toBe('playing');
+    expect(soundControlState('running', true)).toBe('muted');
   });
 });
 
@@ -115,6 +125,9 @@ describe('guided admin safety', () => {
   it('keeps both destructive confirmations explicit', () => {
     expect(CLEAR_REGISTRATIONS_PHRASE).toBe('DELETE REGISTRATIONS');
     expect(RESET_GAMES_CONFIRMATION).toContain('إبقاء التسجيلات');
+  });
+  it('turns PostgREST safe-update failures into a useful Arabic message', () => {
+    expect(adminActionErrorMessage({ code: '21000', message: 'UPDATE requires a WHERE clause' })).toContain('حماية قاعدة البيانات');
   });
   it('has no duplicate lower winner wordmark in either stage reveal', () => {
     const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');

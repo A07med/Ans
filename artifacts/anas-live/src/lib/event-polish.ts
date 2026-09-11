@@ -19,15 +19,16 @@ export function stayAliveStartDisabledReason(registered: number): string | null 
 }
 
 export function stayAliveQuickTargets(remaining: number): Array<{ label: string; value: number }> {
-  const candidates = [
-    { label: '75%', value: Math.floor(remaining * 0.75) },
-    { label: '50%', value: Math.floor(remaining * 0.5) },
-    { label: '25%', value: Math.floor(remaining * 0.25) },
+  return [
+    { label: 'إبقاء 75%', value: Math.floor(remaining * 0.75) },
+    { label: 'إبقاء 50%', value: Math.floor(remaining * 0.5) },
+    { label: 'إبقاء 25%', value: Math.floor(remaining * 0.25) },
+    { label: 'آخر 20', value: 20 },
     { label: 'آخر 10', value: 10 },
     { label: 'آخر 5', value: 5 },
     { label: 'آخر 3', value: 3 },
+    { label: 'فائز واحد', value: 1 },
   ];
-  return candidates.filter(({ value }) => value >= 1 && value < remaining);
 }
 
 export function countAnimationDuration(from: number, to: number): number {
@@ -68,9 +69,27 @@ export function wamdaResultCopy(participant: ParticipantView) {
 
 export type SoundCue = 'wamda-start' | 'false-start' | 'valid-tap' | 'positive' | 'eliminated' | 'winner';
 
-export function soundControlState(unlocked: boolean, muted: boolean): 'enable' | 'playing' | 'muted' {
-  if (!unlocked) return 'enable';
+export type SoundContextState = 'absent' | 'suspended' | 'running';
+
+export function soundControlState(contextState: SoundContextState, muted: boolean): 'enable' | 'resume' | 'playing' | 'muted' {
+  if (contextState === 'absent') return 'enable';
+  if (contextState === 'suspended') return 'resume';
   return muted ? 'muted' : 'playing';
+}
+
+export function adminActionErrorMessage(cause: unknown): string {
+  const value = cause as { code?: unknown; message?: unknown } | null;
+  const code = typeof value?.code === 'string' ? value.code : '';
+  const message = typeof value?.message === 'string' ? value.message : '';
+  if (code === '21000' || message.includes('requires a WHERE clause')) {
+    return 'تعذّر حذف التسجيلات بسبب حماية قاعدة البيانات. لم تُحذف أي تسجيلات.';
+  }
+  if (code === '42501' || message.includes('admin_required')) return 'هذه العملية تتطلب حساب مشرف مخوّل.';
+  if (message.includes('no_registered_participants')) return 'سجّل مشاركًا واحدًا على الأقل لبدء اللعبة.';
+  if (message.includes('exactly_one_survivor_required')) return 'يجب أن يبقى مشارك واحد فقط قبل اختيار الفائز.';
+  if (message.includes('winner_not_selected')) return 'اختر الفائز أولًا قبل الكشف.';
+  if (message.includes('invalid_survivor_target')) return 'العدد يجب أن يكون أقل من الباقين وأكبر من صفر.';
+  return message ? `تعذّر تنفيذ الأمر: ${message}` : 'تعذّر تنفيذ الأمر. حاول مرة أخرى.';
 }
 
 export function canClearRegistrations(typedPhrase: string): boolean {
@@ -93,7 +112,9 @@ export function participantTransitionCues(
     if (participant.stayAliveStatus === 'alive' || participant.stayAliveStatus === 'finalist') cues.push('positive');
   }
   const newlyRevealedWinner = !previousParticipant.winnerRevealed && participant.winnerRevealed && participant.wamdaIsWinner;
-  const stayAliveWinner = previousState.gameStatus !== 'revealed' && state.gameStatus === 'revealed' && participant.stayAliveStatus === 'winner';
+  const stayAliveWinner = participant.stayAliveStatus === 'winner' && state.gameStatus === 'revealed' && (
+    previousState.gameStatus !== 'revealed' || previousParticipant.stayAliveStatus !== 'winner'
+  );
   if (newlyRevealedWinner || stayAliveWinner) cues.push('winner');
   return cues;
 }

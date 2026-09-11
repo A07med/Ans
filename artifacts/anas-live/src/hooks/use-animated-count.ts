@@ -4,7 +4,7 @@ import { countAnimationDuration, countAtProgress, shouldAnimateCount } from '@/l
 type CountAnimationCallbacks = {
   onStart?: () => void;
   onTick?: () => void;
-  onLand?: () => void;
+  onLand?: (target: number) => void;
 };
 
 export function useAnimatedCount(target: number, callbacks: CountAnimationCallbacks = {}) {
@@ -24,7 +24,7 @@ export function useAnimatedCount(target: number, callbacks: CountAnimationCallba
     if (!shouldAnimateCount(from, target, reducedMotion)) {
       displayedRef.current = target;
       setDisplayed(target);
-      if (target < from) callbacksRef.current.onLand?.();
+      if (target < from) callbacksRef.current.onLand?.(target);
       return undefined;
     }
 
@@ -53,7 +53,7 @@ export function useAnimatedCount(target: number, callbacks: CountAnimationCallba
         displayedRef.current = target;
         setDisplayed(target);
         setLanded(true);
-        callbacksRef.current.onLand?.();
+        callbacksRef.current.onLand?.(target);
         landingTimer = window.setTimeout(() => setLanded(false), 520);
       }
     };

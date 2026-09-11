@@ -5,7 +5,7 @@ import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { useAnimatedCount } from '@/hooks/use-animated-count';
 import { backend, APP_MODE } from '@/lib/backend';
-import { canClearRegistrations, CLEAR_REGISTRATIONS_PHRASE, participantTransitionCues, RESET_GAMES_CONFIRMATION, soundControlState, stayAlivePhase, stayAliveQuickTargets, stayAliveStartDisabledReason, wamdaResultCopy } from '@/lib/event-polish';
+import { adminActionErrorMessage, canClearRegistrations, CLEAR_REGISTRATIONS_PHRASE, participantTransitionCues, RESET_GAMES_CONFIRMATION, soundControlState, stayAlivePhase, stayAliveQuickTargets, stayAliveStartDisabledReason, wamdaResultCopy } from '@/lib/event-polish';
 import { validSurvivorTarget } from '@/lib/game-rules';
 import type { AdminAction, AdminIdentity, AdminLog, LiveState, ParticipantView, WamdaResult } from '@/lib/live-types';
 import { registrationErrorMessage } from '@/lib/registration-errors';
@@ -47,11 +47,32 @@ function Pill({ children, tone = 'quiet' }: { children: ReactNode; tone?: 'quiet
 
 function SoundControl({ stage = false, onEnabled }: { stage?: boolean; onEnabled?: () => void }) {
   const [, redraw] = useState(0);
+  const [feedback, setFeedback] = useState('');
   useEffect(() => soundEngine.subscribe(() => redraw((value) => value + 1)), []);
-  const unlock = async () => { await soundEngine.unlock(); onEnabled?.(); };
-  const controlState = soundControlState(soundEngine.unlocked, soundEngine.isMuted);
-  if (controlState === 'enable') return <button className={`sound-control ${stage ? 'stage-sound-control' : ''}`} onClick={() => void unlock()}><Volume2 size={15} />{stage ? 'تفعيل صوت العرض' : soundEngine.preferred ? 'إعادة تفعيل الصوت 🔊' : 'تفعيل الصوت 🔊'}</button>;
-  return <button className={`sound-control ${stage ? 'stage-sound-control' : ''}`} aria-pressed={soundEngine.isMuted} onClick={() => soundEngine.setMuted(!soundEngine.isMuted)}>{soundEngine.isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}{soundEngine.isMuted ? 'تشغيل الصوت' : 'كتم الصوت'}</button>;
+  const unlock = async () => {
+    setFeedback('');
+    try {
+      await soundEngine.unlock();
+      setFeedback('تم تفعيل الصوت ✓');
+      window.setTimeout(() => setFeedback(''), 2_500);
+      onEnabled?.();
+    } catch {
+      setFeedback('تعذّر تشغيل الصوت. اضغط مجددًا وتأكد أن الجهاز ليس على الوضع الصامت.');
+    }
+  };
+  const controlState = soundControlState(soundEngine.contextState, soundEngine.isMuted);
+  const status = controlState === 'playing' ? 'ON' : controlState === 'muted' ? 'MUTED' : controlState === 'resume' ? 'SUSPENDED' : 'OFF';
+  return <div className={`audio-panel ${stage ? 'stage-audio-panel' : ''}`}>
+    <span className={`audio-status audio-${status.toLowerCase()}`}>{stage ? 'Sound' : 'الصوت'}: {status}</span>
+    {(controlState === 'enable' || controlState === 'resume') ? <>
+      {!stage && <span className="audio-copy">الصوت غير مفعّل</span>}
+      <button className="sound-control" onClick={() => void unlock()}><Volume2 size={15} />{stage ? 'تفعيل صوت العرض' : controlState === 'resume' || soundEngine.preferred ? 'إعادة تفعيل الصوت 🔊' : 'تفعيل الصوت 🔊'}</button>
+    </> : <>
+      <button className="sound-control" onClick={() => soundEngine.testSound()} disabled={soundEngine.isMuted}><Volume2 size={15} />اختبار الصوت</button>
+      <button className="sound-control" aria-pressed={soundEngine.isMuted} onClick={() => soundEngine.setMuted(!soundEngine.isMuted)}>{soundEngine.isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}{soundEngine.isMuted ? 'تشغيل' : 'كتم'}</button>
+    </>}
+    {feedback && <span className="audio-feedback" role="status">{feedback}</span>}
+  </div>;
 }
 
 function PublicHome() {
@@ -127,6 +148,8 @@ function PlayPage() {
   useEffect(() => { void rehydrate(); }, [rehydrate, state?.updatedAt]);
   useLayoutEffect(() => {
     if (!state || !participant) return;
+    if (state.currentExperience === 'wamda' && state.wamdaSignal === 'red') soundEngine.startTension('low');
+    else soundEngine.stopTension();
     if (state.wamdaSignal === 'green' && state.activeSignalId && greenStart.current?.signal !== state.activeSignalId) {
       greenStart.current = { signal: state.activeSignalId, at: performance.now() };
       soundEngine.play('wamda-start');
@@ -136,6 +159,7 @@ function PlayPage() {
     previousState.current = state;
     previousParticipant.current = participant;
   }, [state, participant]);
+  useEffect(() => () => soundEngine.stopTension(), []);
   const tap = async () => {
     if (!state?.activeGameSessionId || !state.activeSignalId || !participant || participant.wamdaAttempt !== 'none' || tapBusy) return;
     const token = localStorage.getItem(PARTICIPANT_TOKEN_KEY);
@@ -153,7 +177,7 @@ function PlayPage() {
   const stay = stayAliveCopy(participant.stayAliveStatus, state.gameStatus === 'revealed');
   const wamdaResult = wamdaResultCopy(participant);
   return <Atmosphere><main className={`play-page experience-${state.currentExperience}`}>
-    <header className="play-header"><BrandMark className="w-32" /><div className="play-tools"><SoundControl /><span className="connection-dot">{realtime ? <Wifi size={13} /> : <WifiOff size={13} />} {realtime ? 'متصل' : 'نستعيد الاتصال'}</span></div></header>
+    <header className="play-header"><BrandMark className="w-32" /><div className="play-tools"><SoundControl onEnabled={() => { if (state.currentExperience === 'wamda' && state.wamdaSignal === 'red') soundEngine.startTension('low'); }} /><span className="connection-dot">{realtime ? <Wifi size={13} /> : <WifiOff size={13} />} {realtime ? 'متصل' : 'نستعيد الاتصال'}</span></div></header>
     <section className="experience-card fade-in">
       {state.currentExperience === 'lobby' && <div className="text-center"><Check className="mx-auto text-[var(--anas-green)]" size={34} /><h1 className="display-title mt-6 text-4xl">تم تسجيلك ✓</h1><p className="mt-5 whitespace-pre-line leading-9 text-[var(--anas-muted)]">خلك قريب…{`\n`}يمكن نحتاجك بعد شوي 👀</p></div>}
       {state.currentExperience === 'intermission' && <div className="text-center"><p className="eyebrow">فاصل قصير</p><h1 className="display-title mt-6 text-5xl">خذ نفسًا</h1><p className="mt-5 text-[var(--anas-muted)]">نرجع بعد شوي. خلك قريب.</p></div>}
@@ -172,12 +196,17 @@ function StagePage({ game }: { game: 'alive' | 'wamda' }) {
   const { state, loading } = useLiveState();
   const previousSignal = useRef<LiveState['wamdaSignal'] | null>(null);
   const previousGameStatus = useRef<LiveState['gameStatus'] | null>(null);
-  const animatedCount = useAnimatedCount(state?.stayAliveRemaining ?? 0, { onStart: () => soundEngine.play('count-start'), onTick: () => soundEngine.play('count-tick'), onLand: () => soundEngine.play('count-land') });
+  const animatedCount = useAnimatedCount(state?.stayAliveRemaining ?? 0, {
+    onStart: () => soundEngine.play('count-start'),
+    onTick: () => soundEngine.play('count-tick'),
+    onLand: (target) => soundEngine.play(target === 1 ? 'count-one' : target === 3 ? 'count-three' : 'count-land'),
+  });
   useEffect(() => {
     if (!state) return;
     if (game === 'wamda') {
       if (state.wamdaSignal === 'red' && previousSignal.current !== 'red') soundEngine.startTension();
       if (state.wamdaSignal !== 'red') soundEngine.stopTension();
+      if (previousSignal.current === 'red' && state.wamdaSignal === 'green') soundEngine.play('wamda-start');
     }
     if (previousGameStatus.current && previousGameStatus.current !== 'revealed' && state.gameStatus === 'revealed') soundEngine.play('winner');
     previousSignal.current = state.wamdaSignal;
@@ -205,15 +234,63 @@ function Section({ title, children, className = '' }: { title: string; children:
 type StayAliveAdminProps = { state: LiveState; winnerSelected: boolean; target: string; busy: boolean; setTarget: (target: string) => void; run: (action: AdminAction, payload?: Record<string, unknown>, confirmation?: string, success?: string) => Promise<boolean>; round: (target?: number) => Promise<void> };
 function StayAliveAdmin({ state, winnerSelected, target, busy, setTarget, run, round }: StayAliveAdminProps) {
   const phase = stayAlivePhase(state, winnerSelected);
-  const startDisabledReason = stayAliveStartDisabledReason(state.registered);
+  const noParticipantsReason = stayAliveStartDisabledReason(state.registered);
   const requestedTarget = Number(target);
   const validTarget = validSurvivorTarget(state.stayAliveRemaining, requestedTarget);
-  if (phase === 'not-started') return <Section title="باقي معنا؟" className="guided-card"><p className="operator-summary">المسجلون الآن <b>{state.registered}</b></p><ActionButton primary onClick={() => void run('start_stay_alive')} disabled={busy || Boolean(startDisabledReason)}>ابدأ باقي معنا؟</ActionButton>{startDisabledReason && <p className="disabled-reason">{startDisabledReason}</p>}</Section>;
-  if (phase === 'revealed') return <Section title="باقي معنا؟" className="guided-card"><p className="operator-kicker">اكتملت اللعبة</p><h3>تم كشف الفائز</h3><p className="operator-help">استخدم «إعادة ضبط الألعاب» من منطقة الخطر قبل بروفة جديدة.</p></Section>;
-  if (phase === 'selected') return <Section title="باقي معنا؟" className="guided-card"><p className="operator-kicker">تم اختيار الفائز — الاسم ما زال مخفيًا</p><ActionButton primary onClick={() => void run('reveal_stay_alive_winner')} disabled={busy}>كشف الفائز</ActionButton></Section>;
-  if (phase === 'final-one') return <Section title="باقي معنا؟" className="guided-card"><p className="operator-kicker">لدينا فائز واحد</p><ActionButton primary onClick={() => void run('select_stay_alive_winner')} disabled={busy}>اختيار الفائز</ActionButton></Section>;
-  if (phase === 'final-three') return <Section title="باقي معنا؟" className="guided-card"><p className="operator-kicker">🔥 آخر 3 مشاركين</p><div className="round-stats"><span>الجولة الحالية <b>{state.stayAliveRound}</b></span><span>الباقون <b>{state.stayAliveRemaining} من {state.registered}</b></span></div><ActionButton primary onClick={() => void round(1)} disabled={busy}>الانتقال إلى الفائز الواحد</ActionButton><ActionButton onClick={() => void run(state.gameStatus === 'paused' ? 'resume' : 'pause')} disabled={busy}>{state.gameStatus === 'paused' ? 'استئناف اللعبة' : 'إيقاف مؤقت'}</ActionButton></Section>;
-  return <Section title="باقي معنا؟" className="guided-card"><div className="round-stats"><span>الجولة الحالية <b>{state.stayAliveRound}</b></span><span>الباقون <b>{state.stayAliveRemaining} من {state.registered}</b></span></div><label className="field-label full-row">كم شخص تريد أن يبقى في الجولة القادمة؟<input className="field" dir="ltr" type="number" min="1" max={Math.max(1, state.stayAliveRemaining - 1)} value={target} onChange={(event) => setTarget(event.target.value)} /></label><div className="quick-targets">{stayAliveQuickTargets(state.stayAliveRemaining).map((option) => <button key={option.label} onClick={() => setTarget(String(option.value))}>{option.label}</button>)}</div><p className="round-preview">{validTarget ? `سيبقى ${requestedTarget} من ${state.stayAliveRemaining}` : 'اختر عددًا أقل من الباقين وأكبر من صفر'}</p><ActionButton primary onClick={() => void round()} disabled={busy || !validTarget || state.gameStatus === 'paused'}>تنفيذ الجولة التالية</ActionButton>{state.gameStatus === 'paused' && <p className="disabled-reason">استأنف اللعبة أولًا لتنفيذ الجولة.</p>}<ActionButton onClick={() => void run(state.gameStatus === 'paused' ? 'resume' : 'pause')} disabled={busy}>{state.gameStatus === 'paused' ? 'استئناف اللعبة' : 'إيقاف مؤقت'}</ActionButton></Section>;
+  const isStayAlive = state.activeGame === 'stay_alive';
+  const canStart = !state.activeGame && state.gameStatus === 'idle' && !noParticipantsReason;
+  const canPause = isStayAlive && state.gameStatus === 'live';
+  const canResume = isStayAlive && state.gameStatus === 'paused';
+  const canExecuteRound = isStayAlive && ['live', 'selection'].includes(state.gameStatus) && validTarget;
+  const canSelectWinner = isStayAlive && state.stayAliveRemaining === 1 && !winnerSelected && state.gameStatus !== 'revealed';
+  const canRevealWinner = isStayAlive && winnerSelected && state.gameStatus === 'selection';
+  const statusLabel: Record<LiveState['gameStatus'], string> = { idle: 'lobby', live: 'live', paused: 'paused', selection: 'selection', revealed: 'revealed', complete: 'revealed' };
+  const startReason = noParticipantsReason ?? (isStayAlive ? 'اللعبة بدأت بالفعل' : state.activeGame ? 'أوقف اللعبة الحالية أو أعدها للردهة أولًا' : null);
+  const roundReason = !isStayAlive ? 'ابدأ باقي معنا؟ أولًا' : state.gameStatus === 'paused' ? 'استأنف اللعبة أولًا لتنفيذ الجولة' : state.gameStatus === 'revealed' ? 'تم كشف الفائز؛ أعد ضبط الألعاب لبدء بروفة جديدة' : !validTarget ? 'اختر عددًا أقل من الباقين وأكبر من صفر' : null;
+  const selectionReason = state.stayAliveRemaining !== 1 ? 'يتاح الاختيار عندما يبقى مشارك واحد فقط' : winnerSelected ? 'تم اختيار الفائز بالفعل' : !isStayAlive ? 'ابدأ باقي معنا؟ أولًا' : null;
+  const revealReason = !winnerSelected ? 'اختر الفائز أولًا' : state.gameStatus === 'revealed' ? 'تم كشف الفائز بالفعل' : null;
+
+  return <Section title="باقي معنا؟" className="guided-card stay-alive-operator">
+    <div className="operator-status-grid">
+      <span>المسجلون <b>{state.registered}</b></span>
+      <span>الجولة <b>{state.stayAliveRound}</b></span>
+      <span>الباقون <b>{state.stayAliveRemaining}</b></span>
+      <span>الحالة <b dir="ltr">{statusLabel[state.gameStatus]}</b></span>
+    </div>
+
+    <div className="operator-section">
+      <h3>البدء والإيقاف</h3>
+      <div className="operator-button-row">
+        <ActionButton primary onClick={() => void run('start_stay_alive')} disabled={busy || !canStart}>ابدأ باقي معنا؟</ActionButton>
+        <ActionButton onClick={() => void run('pause')} disabled={busy || !canPause}>إيقاف مؤقت</ActionButton>
+        <ActionButton onClick={() => void run('resume')} disabled={busy || !canResume}>استئناف</ActionButton>
+      </div>
+      {!canStart && phase === 'not-started' && startReason && <p className="disabled-reason">{startReason}</p>}
+      {isStayAlive && !canPause && !canResume && state.gameStatus !== 'revealed' && <p className="disabled-reason">الإيقاف متاح أثناء اللعب، والاستئناف بعد الإيقاف المؤقت.</p>}
+    </div>
+
+    <div className="operator-section">
+      <h3>هدف الجولة التالية</h3>
+      <div className="quick-targets">{stayAliveQuickTargets(state.stayAliveRemaining).map((option) => {
+        const optionValid = validSurvivorTarget(state.stayAliveRemaining, option.value);
+        return <button key={option.label} onClick={() => setTarget(String(option.value))} disabled={busy || !isStayAlive || !optionValid}>{option.label}</button>;
+      })}</div>
+      <label className="field-label full-row">عدد الباقين يدويًا<input className="field" dir="ltr" type="number" min="1" max={Math.max(1, state.stayAliveRemaining - 1)} value={target} onChange={(event) => setTarget(event.target.value)} /></label>
+      <p className="round-preview">{validTarget ? <><b dir="ltr">{state.stayAliveRemaining} ← {requestedTarget}</b><span>سيبقى {requestedTarget} من {state.stayAliveRemaining}</span></> : 'اختر هدفًا صالحًا لمعاينته قبل التنفيذ'}</p>
+      <ActionButton primary onClick={() => void round()} disabled={busy || !canExecuteRound}>تنفيذ الجولة</ActionButton>
+      {!canExecuteRound && roundReason && <p className="disabled-reason">{roundReason}</p>}
+    </div>
+
+    <div className="operator-section winner-controls">
+      <h3>الفائز</h3>
+      <div className="operator-button-row">
+        <ActionButton onClick={() => void run('select_stay_alive_winner')} disabled={busy || !canSelectWinner}>اختيار الفائز</ActionButton>
+        <ActionButton primary onClick={() => void run('reveal_stay_alive_winner')} disabled={busy || !canRevealWinner}>كشف الفائز</ActionButton>
+      </div>
+      {!canSelectWinner && selectionReason && <p className="disabled-reason">{selectionReason}</p>}
+      {!canRevealWinner && revealReason && <p className="disabled-reason">{revealReason}</p>}
+    </div>
+  </Section>;
 }
 
 function AdminPage() {
@@ -221,7 +298,7 @@ function AdminPage() {
   const loadAdmin = useCallback(async () => { try { const data = await backend.getAdminData(); setLogs(data.logs); setResults(data.results); } catch { /* surfaced in status */ } }, []);
   useEffect(() => { void backend.adminIdentity().then((value) => { setIdentity(value); setAuthChecked(true); if (!value) navigate('/admin/login', { replace: true }); }); }, [navigate]);
   useEffect(() => { if (identity) void loadAdmin(); }, [identity, loadAdmin, live.state?.updatedAt]);
-  const run = async (action: AdminAction, payload?: Record<string, unknown>, confirmation?: string, success?: string) => { if (confirmation && !window.confirm(confirmation)) return false; setBusy(true); setNotice(''); try { await backend.adminAction(action, payload); await Promise.all([live.refresh(), loadAdmin()]); if (success) setNotice(success); return true; } catch (cause) { setNotice(cause instanceof Error ? cause.message : 'تعذّر تنفيذ الأمر'); return false; } finally { setBusy(false); } };
+  const run = async (action: AdminAction, payload?: Record<string, unknown>, confirmation?: string, success?: string) => { if (confirmation && !window.confirm(confirmation)) return false; setBusy(true); setNotice(''); try { await backend.adminAction(action, payload); await Promise.all([live.refresh(), loadAdmin()]); if (success) setNotice(success); return true; } catch (cause) { setNotice(adminActionErrorMessage(cause)); return false; } finally { setBusy(false); } };
   const round = async (override?: number) => { setBusy(true); setNotice(''); try { await backend.stayAliveRound(override ?? Number(target), crypto.randomUUID()); await live.refresh(); } catch { setNotice('العدد يجب أن يكون أقل من الباقين وأكبر من صفر'); } finally { setBusy(false); } };
   const arm = async () => { setBusy(true); setNotice('تم التسليح. التوقيت العشوائي لا يظهر للمشغّل.'); try { await backend.armWamda(); await live.refresh(); } catch { setNotice('تعذّر تسليح الإشارة أو توجد إشارة فعّالة'); } finally { setBusy(false); } };
   if (!authChecked || live.loading) return <Atmosphere><Loading /></Atmosphere>; if (!identity) return null; if (!live.state) return <Atmosphere><BackendUnavailable /></Atmosphere>;
@@ -229,7 +306,7 @@ function AdminPage() {
   const latestStayAction = logs.find((log) => ['select_stay_alive_winner', 'start_stay_alive', 'reset_event_state', 'clear_all_registrations'].includes(log.action));
   const stayWinnerSelected = latestStayAction?.action === 'select_stay_alive_winner';
   const wamdaWinnerSelected = results.some((result) => result.selected);
-  const clearRegistrations = async () => { if (!canClearRegistrations(clearPhrase)) return; const deletedCount = state.registered; const completed = await run('clear_all_registrations', undefined, undefined, 'تم حذف جميع التسجيلات — المسجلون الآن 0'); if (completed) { setClearPhrase(''); if (deletedCount === 0) setNotice('لا توجد تسجيلات للحذف — المسجلون الآن 0'); } };
+  const clearRegistrations = async () => { if (!canClearRegistrations(clearPhrase)) return; const deletedCount = state.registered; const completed = await run('clear_all_registrations', undefined, undefined, 'تم حذف جميع التسجيلات\nالمسجلون الآن 0'); if (completed) { setClearPhrase(''); if (deletedCount === 0) setNotice('لا توجد تسجيلات للحذف\nالمسجلون الآن 0'); } };
   return <div className="admin-shell" dir="rtl"><header className="admin-header"><div><BrandMark className="w-28" /><span>غرفة التشغيل</span></div><div className="flex items-center gap-3"><Pill tone={APP_MODE === 'demo' ? 'warn' : 'good'}>{APP_MODE.toUpperCase()} BACKEND</Pill><button onClick={async () => { await backend.adminSignOut(); navigate('/admin/login'); }} aria-label="خروج"><LogOut size={18} /></button></div></header>{APP_MODE === 'demo' && <div className="demo-banner sticky top-0 z-20 rounded-none text-center">DEMO MODE — NOT FOR EVENT USE</div>}<main className="admin-main"><div className="admin-title"><div><p className="eyebrow">SYSTEM STATUS</p><h1>إدارة أُنس Live</h1></div><button className="refresh-button" onClick={() => void live.refresh()}><RefreshCw size={15} /> تحديث</button></div>{notice && <div className="admin-notice" role="status">{notice}</div>}<section className="metrics"><Metric label="المسجلون" value={state.registered} detail={`${state.connected} متصل تقريبًا`} /><Metric label="التجربة الحالية" value={state.currentExperience} detail={state.gameStatus} /><Metric label="Backend" value={APP_MODE.toUpperCase()} detail={live.error ? 'DATABASE ERROR' : 'DATABASE AVAILABLE'} /><Metric label="Realtime" value={live.realtime ? 'CONNECTED' : 'DISCONNECTED'} detail={identity.email} /></section><div className="admin-grid">
     <Section title="التسجيل"><ActionButton onClick={() => void run('open_registration')} disabled={busy}>فتح التسجيل</ActionButton><ActionButton onClick={() => void run('close_registration')} disabled={busy}>إغلاق التسجيل</ActionButton><div className="qr-box"><QRCodeSVG value={joinUrl} size={150} bgColor="#f2dfc4" fgColor="#21100d" /><span dir="ltr">{joinUrl}</span></div></Section>
     <StayAliveAdmin state={state} winnerSelected={stayWinnerSelected} target={target} busy={busy} setTarget={setTarget} run={run} round={round} />
