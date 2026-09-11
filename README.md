@@ -4,7 +4,7 @@
 
 ## Release status
 
-**CODE READY FOR SUPABASE APPLY.** The repository contains the live implementation, but no remote Supabase project has been migrated and no Vercel production deployment has been performed from this release candidate.
+**PREVIEW/REHEARSAL READY.** Migration `0001` and the Wamda function are live in the approved Supabase project. The backwards-safe rehearsal polish is prepared separately as migration `0002_event_rehearsal_polish.sql`; it must not be applied remotely without a new owner approval. There is no Vercel Production deployment.
 
 ## Routes
 
@@ -19,10 +19,11 @@ Public pages intentionally contain no navigation to Play, Admin, or Stage. `/` r
 
 - React 19, Vite, TypeScript, and Wouter in `artifacts/anas-live`.
 - The backend adapter in `src/lib/backend.ts` has two explicit modes: `demo` and `supabase`.
-- Supabase PostgreSQL is authoritative in event mode. `supabase/migrations/0001_anas_live.sql` creates normalized data, constraints, indexes, RLS, safe public projections, participant RPCs, admin RPCs, action logs, and atomic Stay Alive operations.
+- Supabase PostgreSQL is authoritative in event mode. `supabase/migrations/0001_anas_live.sql` creates the base schema and hardened RPCs. `supabase/migrations/0002_event_rehearsal_polish.sql` adds backwards-safe reset operations and participant-specific post-reveal Wamda ranking without rewriting the applied migration.
 - `supabase/functions/wamda-signal` is the only timed Edge Function. It verifies the organizer JWT, asks PostgreSQL to choose a private 2–7 second delay, waits, then uses the server-only service role to fire the due signal.
 - Supabase Realtime publishes only `event_state` and `wamda_public_signals`. The public signal projection does not contain `trigger_at`. Participant-private state is rehydrated through an opaque-token RPC and is never broadcast to other participants.
 - A 15-second read fallback recovers after missed Realtime events. Supabase Presence provides an intentionally approximate connected count without database heartbeat writes.
+- Local Web Audio cues provide consent-based stage atmosphere and participant feedback. They use no remote or commercial audio files and are never authoritative timing.
 
 The legacy Express package remains as a demo/reference API contract; the Vercel event build does not depend on it. Event mode never falls back to that server or to demo data.
 
@@ -54,7 +55,7 @@ No `REPL_ID`, `BASE_PATH`, or mandatory `PORT` is required. Vite defaults to por
 Do these steps in a non-production project first:
 
 1. Install the Supabase CLI and link the intended project.
-2. Review and apply `supabase/migrations/0001_anas_live.sql` (`supabase db push` after owner approval).
+2. Review every pending migration. Apply it only after owner approval with `supabase db push --linked --skip-vault`.
 3. Deploy the timed function: `supabase functions deploy wamda-signal`.
 4. In Supabase Authentication, create the first organizer as an email/password user.
 5. Copy that user’s UUID from Authentication → Users, then run:
@@ -80,8 +81,9 @@ Authenticated users not present in `admin_profiles`, disabled profiles, and anon
 - Stay Alive eligibility is snapshotted at start and survivor selection is a single server-side bulk transaction using PostgreSQL randomness. Selection and reveal are separate actions.
 - Wamda requires the active server-created session and signal IDs, records false starts, accepts exactly one attempt per participant/session, validates positive values up to 10 seconds, and flags reactions under 120 ms or submissions over 15 seconds after green.
 - Wamda results sort deterministically by reaction time, server receive time, then attempt UUID. Flags are reviewed rather than automatically disqualifying exceptional results. The organizer explicitly selects and later reveals a result.
+- Selection does not expose `wamdaRank` or `wamdaIsWinner` through the participant RPC. Only an authoritative winner reveal returns participant-specific rank, total ranked count, and winner state; false starts never receive a numeric rank.
 
-Browser reaction timing is practical event-night timing, not cheat-proof: `performance.now()` removes wall-clock jumps, but a participant controls their browser. Use the integrity flags and physical observation for judgment.
+Browser reaction timing is practical event-night timing, not cheat-proof: each participant device establishes the green reference from its local receipt of the green state using `performance.now()`. The local launch sound is triggered beside that transition but audio completion and the projector are never timing references. Use the integrity flags and physical observation for judgment.
 
 ## Tests and validation
 
@@ -91,7 +93,7 @@ pnpm --filter @workspace/anas-live test
 pnpm run build
 ```
 
-The unit tests cover Oman phone normalization and registration input normalization. `supabase/tests/security.sql` verifies public table/function privileges and RLS when run against a local Supabase stack:
+Frontend tests cover registration, Wamda reveal privacy/copy, guided Stay Alive states, count animation, reduced motion, destructive confirmation, and transition-deduplicated sound. The pgTAP suite verifies public privileges, RLS, both reset operations, preserved sessions, registration deletion, audit logging, and deterministic post-reveal ranking:
 
 ```bash
 supabase start
@@ -112,16 +114,16 @@ The repository-level `vercel.json` provides the SPA rewrite so direct visits to 
 
 ## Rehearsal and reset
 
-Use [docs/EVENT_NIGHT_RUNBOOK.md](docs/EVENT_NIGHT_RUNBOOK.md). Game resets keep registrations. Full Event Reset revokes participant sessions and deletes participant records; it requires typing `RESET ANAS`. Treat it as destructive and use it only during an approved rehearsal reset.
+Use [docs/EVENT_NIGHT_RUNBOOK.md](docs/EVENT_NIGHT_RUNBOOK.md). **إعادة ضبط الألعاب** keeps registrations and device sessions for another rehearsal. **حذف جميع التسجيلات** removes participant/device/gameplay data, closes registration, preserves admins, and requires typing `DELETE REGISTRATIONS`. Neither action is for use during a live round.
 
 ## Visual system
 
-The supplied official poster is rendered as an unchanged cropped SVG image window for the major أُنس wordmark. The text-free carpet background was derived from that owner-supplied identity reference with the built-in image editing tool, then web-optimized as JPEG. Qahwa and Thmanyah font files were not supplied, so the bundled open-source fallbacks are Aref Ruqaa for display and Noto Kufi Arabic for functional UI. Brand colors were sampled/approximated from the supplied burgundy, carpet, sand, cream, and copper artwork.
+The official أُنس wordmark is the standalone transparent PNG at `artifacts/anas-live/public/anas-wordmark.png`; it contains no poster rectangle, carpet, surrounding artwork, or extra text. The text-free carpet background is a separate optimized JPEG. Qahwa and Thmanyah font files were not supplied, so the bundled open-source fallbacks are Aref Ruqaa for display and Noto Kufi Arabic for functional UI. Brand colors were sampled/approximated from the supplied burgundy, carpet, sand, cream, and copper artwork.
 
 ## Known limitations
 
-- A remote Supabase project and Vercel production are not connected by this repository alone.
+- Migration `0002_event_rehearsal_polish.sql` remains local until a separate owner approval applies it to the linked Supabase project.
 - The Wamda Edge Function keeps one invocation open for at most seven seconds. Test this on the chosen Supabase plan before the event.
 - Presence is approximate and includes open stage/admin clients in the channel.
-- Full database behavioral/concurrency tests require a local Supabase/Docker stack; frontend unit/build checks do not replace that rehearsal.
+- Browser autoplay still requires a user gesture in each newly opened/reloaded stage or participant tab.
 - The legacy OpenAPI/Express demo contract is retained for provenance but is not the event backend.

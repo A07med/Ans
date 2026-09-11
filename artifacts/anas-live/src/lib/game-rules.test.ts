@@ -17,4 +17,9 @@ describe('Wamda attempt integrity', () => {
     const second = {...first,attemptId:'b'};
     expect([second,first].sort(compareWamdaResults).map((item) => item.attemptId)).toEqual(['a','b']);
   });
+  it('uses server receipt time before attempt ID for tied reactions', () => {
+    const later = {attemptId:'a',participantName:'أ',reactionMs:200,submissionReceivedAt:'2026-09-11T12:00:00.200Z',flags:[],selected:false};
+    const earlier = {...later,attemptId:'b',submissionReceivedAt:'2026-09-11T12:00:00.100Z'};
+    expect([later,earlier].sort(compareWamdaResults).map((item) => item.attemptId)).toEqual(['b','a']);
+  });
 });

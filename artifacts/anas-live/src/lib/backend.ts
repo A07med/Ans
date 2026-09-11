@@ -18,7 +18,7 @@ type DemoStore = {
   state: LiveState;
   participants: Record<string, ParticipantSession & { phone: string; stayAliveStatus: ParticipantView['stayAliveStatus']; wamdaAttempt: ParticipantView['wamdaAttempt']; reactionMs: number | null }>;
   logs: AdminLog[];
-  results: WamdaResult[];
+  results: Array<WamdaResult & { participantId: string }>;
   usedRequests: string[];
 };
 
@@ -67,8 +67,23 @@ class DemoBackend implements LiveBackend {
     this.log(store, 'participant_registered', 'تم تسجيل مشارك جديد'); this.write(store); return session;
   }
   async validateParticipant(token: string) {
-    const entry = this.read().participants[token];
-    return entry ? { participantId: entry.participantId, name: entry.name, stayAliveStatus: entry.stayAliveStatus, wamdaAttempt: entry.wamdaAttempt, reactionMs: entry.reactionMs } : null;
+    const store = this.read(); const entry = store.participants[token];
+    if (!entry) return null;
+    const winnerRevealed = store.state.activeGame === 'wamda' && store.state.gameStatus === 'revealed';
+    const ranked = winnerRevealed ? [...store.results].sort(compareWamdaResults) : [];
+    const resultIndex = ranked.findIndex((result) => result.participantId === entry.participantId);
+    const rankedParticipant = resultIndex >= 0 && (entry.wamdaAttempt === 'valid' || entry.wamdaAttempt === 'flagged');
+    return {
+      participantId: entry.participantId,
+      name: entry.name,
+      stayAliveStatus: entry.stayAliveStatus,
+      wamdaAttempt: entry.wamdaAttempt,
+      reactionMs: entry.reactionMs,
+      wamdaRank: rankedParticipant ? resultIndex + 1 : null,
+      wamdaTotalRanked: rankedParticipant ? ranked.length : null,
+      wamdaIsWinner: rankedParticipant ? ranked[resultIndex].selected : null,
+      winnerRevealed,
+    };
   }
   async submitWamda(token: string, sessionId: string, signalId: string, reactionMs: number, falseStart: boolean) {
     const store = this.read(); const entry = store.participants[token]; const state = store.state;
@@ -81,7 +96,7 @@ class DemoBackend implements LiveBackend {
       const flagged = verdict.flags.length > 0; entry.wamdaAttempt = flagged ? 'flagged' : 'valid'; entry.reactionMs = reactionMs;
       state.wamdaResponses += 1; state.wamdaValid += 1; if (flagged) state.wamdaFlagged += 1;
       state.wamdaFastestMs = Math.min(state.wamdaFastestMs ?? reactionMs, reactionMs);
-      store.results.push({ attemptId: uuid(), participantName: entry.name, reactionMs, flags: verdict.flags, selected: false });
+      store.results.push({ attemptId: uuid(), participantId: entry.participantId, participantName: entry.name, reactionMs, submissionReceivedAt: now(), flags: verdict.flags, selected: false });
     }
     this.write(store); return (await this.validateParticipant(token))!;
   }
@@ -103,6 +118,7 @@ class DemoBackend implements LiveBackend {
       Object.values(store.participants).forEach((entry) => { entry.stayAliveStatus = 'alive'; }); state.stayAliveRemaining = state.registered;
     }
     if (action === 'pause') state.gameStatus = 'paused';
+    if (action === 'resume') state.gameStatus = 'live';
     if (action === 'return_lobby') { state.currentExperience = 'lobby'; state.activeGame = null; state.gameStatus = 'idle'; state.stageMode = 'lobby'; state.wamdaSignal = 'idle'; }
     if (action === 'select_stay_alive_winner') {
       const finalists = Object.values(store.participants).filter((entry) => entry.stayAliveStatus === 'alive' || entry.stayAliveStatus === 'finalist');
@@ -120,7 +136,15 @@ class DemoBackend implements LiveBackend {
     }
     if (action === 'reveal_wamda_winner') { if (!state.wamdaWinner) throw new Error('winner_not_selected'); state.gameStatus = 'revealed'; }
     if (action === 'reset_wamda') { state.wamdaSignal = 'idle'; state.activeSignalId = null; state.wamdaResponses = 0; state.wamdaFalseStarts = 0; state.wamdaValid = 0; state.wamdaFlagged = 0; state.wamdaFastestMs = null; state.wamdaWinner = null; store.results = []; Object.values(store.participants).forEach((entry) => { entry.wamdaAttempt = 'none'; entry.reactionMs = null; }); }
-    if (action === 'full_reset') { const replacement = initialDemo(); replacement.state.registrationOpen = false; this.write(replacement); return clone(replacement.state); }
+    if (action === 'reset_event_state') {
+      state.currentExperience = 'lobby'; state.activeGame = null; state.activeGameSessionId = null; state.activeSignalId = null; state.gameStatus = 'idle'; state.stageMode = 'lobby'; state.stayAliveRemaining = 0; state.stayAliveRound = 0; state.stayAliveWinner = null; state.wamdaSignal = 'idle'; state.wamdaResponses = 0; state.wamdaFalseStarts = 0; state.wamdaValid = 0; state.wamdaFlagged = 0; state.wamdaFastestMs = null; state.wamdaWinner = null; store.results = [];
+      Object.values(store.participants).forEach((entry) => { entry.stayAliveStatus = null; entry.wamdaAttempt = 'none'; entry.reactionMs = null; });
+    }
+    if (action === 'clear_all_registrations') {
+      const deleted = Object.keys(store.participants).length;
+      state.registrationOpen = false; state.currentExperience = 'lobby'; state.activeGame = null; state.activeGameSessionId = null; state.activeSignalId = null; state.gameStatus = 'idle'; state.stageMode = 'lobby'; state.registered = 0; state.connected = 0; state.stayAliveRemaining = 0; state.stayAliveRound = 0; state.stayAliveWinner = null; state.wamdaReady = 0; state.wamdaResponses = 0; state.wamdaFalseStarts = 0; state.wamdaValid = 0; state.wamdaFlagged = 0; state.wamdaFastestMs = null; state.wamdaWinner = null; state.wamdaSignal = 'idle'; store.participants = {}; store.results = [];
+      payload = { deletedParticipants: deleted };
+    }
     this.log(store, action, `Admin: ${action}`); this.write(store); return clone(state);
   }
   async stayAliveRound(target: number, requestId: string) {

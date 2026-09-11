@@ -12,5 +12,7 @@ export function classifyReaction(signal: WamdaSignal, reactionMs: number, alread
 }
 
 export function compareWamdaResults(left: WamdaResult, right: WamdaResult): number {
-  return left.reactionMs - right.reactionMs || left.attemptId.localeCompare(right.attemptId);
+  return left.reactionMs - right.reactionMs
+    || (left.submissionReceivedAt ?? '').localeCompare(right.submissionReceivedAt ?? '')
+    || left.attemptId.localeCompare(right.attemptId);
 }

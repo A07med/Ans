@@ -35,16 +35,28 @@ export type ParticipantView = {
   stayAliveStatus: StayAliveStatus;
   wamdaAttempt: 'none' | 'false_start' | 'valid' | 'flagged';
   reactionMs: number | null;
+  wamdaRank: number | null;
+  wamdaTotalRanked: number | null;
+  wamdaIsWinner: boolean | null;
+  winnerRevealed: boolean;
 };
 export type AdminIdentity = { id: string; email: string };
 export type AdminLog = { id: string; action: string; detail: string; createdAt: string };
-export type WamdaResult = { attemptId: string; participantName: string; reactionMs: number; flags: string[]; selected: boolean };
+export type WamdaResult = {
+  attemptId: string;
+  participantName: string;
+  reactionMs: number;
+  submissionReceivedAt?: string;
+  flags: string[];
+  selected: boolean;
+};
 
 export type AdminAction =
-  | 'open_registration' | 'close_registration' | 'start_stay_alive' | 'pause'
+  | 'open_registration' | 'close_registration' | 'start_stay_alive' | 'pause' | 'resume'
   | 'return_lobby' | 'select_stay_alive_winner' | 'reveal_stay_alive_winner'
   | 'reset_stay_alive' | 'open_wamda' | 'cancel_arm' | 'close_wamda'
-  | 'select_wamda_result' | 'reveal_wamda_winner' | 'reset_wamda' | 'full_reset';
+  | 'select_wamda_result' | 'reveal_wamda_winner' | 'reset_wamda'
+  | 'reset_event_state' | 'clear_all_registrations';
 
 export type Subscription = { unsubscribe: () => void };
 export interface LiveBackend {

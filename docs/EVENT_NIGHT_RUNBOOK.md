@@ -1,17 +1,24 @@
 # أُنس Live — Event Night Runbook
 
-This is the operator checklist. Keep one technical contact and one presenter on the same voice channel. Do not apply migrations, redeploy production, or use Full Event Reset during the live program.
+This is the operator checklist. Keep one technical contact and one presenter on the same voice channel. Do not apply migrations, redeploy production, reset games, or delete registrations during a live round.
 
 ## Before the event
 
 1. Confirm the Vercel production deployment is green and uses `VITE_APP_MODE=supabase`.
 2. Open the Supabase dashboard. Check Database, Auth, Realtime, and Edge Functions are healthy.
 3. Open `/admin/login`, sign in, and confirm the top cards say `SUPABASE BACKEND`, `DATABASE AVAILABLE`, and `Realtime CONNECTED`.
-4. Open `/stage/alive` and `/stage/wamda` in separate full-screen projector tabs. Keep both URLs bookmarked.
+4. Open `/stage/alive` and `/stage/wamda` in separate full-screen projector tabs. Press **تفعيل صوت العرض** in each tab from an operator gesture, confirm the mute toggle, then keep both URLs bookmarked.
 5. In Admin, inspect the QR. Confirm it resolves to the production `/join`, never a Replit or preview address.
 6. On one real iPhone Safari and one Android Chrome device: register, reach `/play`, refresh, and confirm the same participant returns.
 7. Run a full rehearsal with test registrations. Verify Stay Alive rounds, private selection, reveal, Wamda red/green, false start, valid response, result review, selection, and reveal.
-8. Only after the rehearsal, perform the approved data reset. Re-register the two operator test phones and leave everyone in Lobby.
+8. After a rehearsal, use **إعادة ضبط الألعاب** if the same registered phones will rehearse again. Before the real event, use **حذف جميع التسجيلات** only after owner approval, type `DELETE REGISTRATIONS`, confirm the count reaches zero, then reopen registration at the planned time.
+
+## Rehearsal cleanup and reset policy
+
+- **During rehearsal:** use **إعادة ضبط الألعاب**. It cancels the active game/signal and returns Play and Stage to Lobby while preserving participants and their device sessions. Refreshing `/play` must keep each test participant registered.
+- **Before the real event:** after the rehearsal is finished and with explicit owner approval, use **حذف جميع التسجيلات**. Read the displayed participant count, type `DELETE REGISTRATIONS`, and verify the confirmation says the registered count is zero. This closes registration and removes participant/gameplay data while preserving organizer accounts.
+- **Never during a live round:** neither reset belongs in live troubleshooting. Pause presenter actions, inspect the current state and event log, and resolve the specific fault first.
+- The former ambiguous **FULL EVENT RESET** control no longer exists.
 
 ## Registration
 
@@ -27,7 +34,7 @@ This is the operator checklist. Keep one technical contact and one presenter on 
 2. Press **بدء اللعبة** once. Do not double-click.
 3. Verify participant phones show “أنت معنا” and the stage shows the total.
 4. Enter the next exact survivor target or use 75%, 50%, or 25%; read the before/after numbers aloud.
-5. Press **الجولة التالية** once and wait for the count to settle before continuing.
+5. Press **تنفيذ الجولة التالية** once and wait for the animated projector count to land on the new authoritative value before continuing. The database changes once; intermediate numbers are presentation only.
 6. Continue to 3. Give the presenter time to speak. Then run one final round from 3 to 1.
 7. Press **اختيار الفائز**. This remains private; the stage and participant do not reveal the name.
 8. On the presenter countdown press **كشف الفائز**.
@@ -39,11 +46,11 @@ This is the operator checklist. Keep one technical contact and one presenter on 
 2. Confirm phones show the large RED/idle reaction lamp and the stage says to wait.
 3. Explain: tapping before green is a false start and allows no retry this round.
 4. Press **تسليح الإشارة** once. The database chooses a hidden random 2–7 second delay. Do not count down.
-5. GREEN appears immediately when the safe Realtime signal arrives. Allow 15 seconds for responses.
+5. GREEN appears when each participant device receives the safe Realtime signal. That device records `performance.now()` locally, starts its local cue, and updates the green visual together; audio playback completion and the projector are never timing authorities. Allow 15 seconds for responses.
 6. Press **إغلاق الاستجابات**.
 7. Review valid results. Results are sorted by reaction time, server receipt time, then attempt ID. Inspect every amber integrity flag (under 120 ms or late submission).
 8. If the fastest result is credible, press **اختيار** beside it and confirm. A flagged result is not automatically disqualified; use observation and operator judgment consistently.
-9. At the presenter’s cue press **كشف الفائز**.
+9. At the presenter’s cue press **كشف الفائز**. Before this action, participant RPC responses contain no rank or winner boolean. After it, valid participants see their own rank and the winner sees the winner treatment; false starts remain unranked.
 10. Press **إعادة الجميع للردهة** or end on the reveal as directed.
 
 ## End event
@@ -78,7 +85,7 @@ Do not switch production to Demo Mode; that would create a separate fake event. 
 
 ### Wamda green has a problem
 
-If RED remains longer than 10 seconds, press **إلغاء التسليح** once. Do not accept responses from that signal. Check the `wamda-signal` Edge Function logs and Realtime. When healthy, use **إعادة ضبط وَمْضَة**, reopen it, explain that the prior signal was void, and run a new session.
+If RED remains longer than 10 seconds, press **إلغاء التسليح** once. Do not accept responses from that signal. Check the `wamda-signal` Edge Function logs and Realtime. When healthy and no live round is in progress, use **إعادة ضبط الألعاب**, reopen Wamda, explain that the prior signal was void, and run a new session.
 
 ### Winner phone disconnects
 
@@ -92,6 +99,10 @@ Do not reveal. For Wamda, review and select the next valid, physically present r
 
 Wait and inspect the event log before doing anything else. Round request IDs and database locks prevent duplicate execution, but a second distinct deliberate action is still a new action. Use game reset only if the presenter and lead operator agree.
 
-### Full Event Reset
+### Sound is unavailable
 
-This revokes sessions and deletes participant records. It requires typing `RESET ANAS`. Use it only during an owner-approved rehearsal reset, never as a live troubleshooting step.
+Browsers require a user gesture before Web Audio can run. Press **تفعيل الصوت 🔊** on a participant phone or **تفعيل صوت العرض** on the stage tab. Reloading can require another gesture even when the preference was remembered. Sound is atmosphere and feedback only; it never changes the database or reaction-time calculation.
+
+### Reset controls
+
+Use **إعادة ضبط الألعاب** to rehearse again with the same registrations. Use **حذف جميع التسجيلات** only for owner-approved cleanup before the real event, after checking the displayed count and typing `DELETE REGISTRATIONS`. Never use either control as a live-round recovery shortcut.
