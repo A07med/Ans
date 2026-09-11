@@ -10,7 +10,7 @@ import { registrationErrorMessage } from '@/lib/registration-errors';
 const PARTICIPANT_TOKEN_KEY = 'anas-participant-token-v1';
 
 function BrandMark({ className = '' }: { className?: string }) {
-  return <svg className={`brand-mark ${className}`} viewBox="130 340 765 320" role="img" aria-label="أُنس"><image href="/anas-brand-source.jpg" width="1024" height="1280" /></svg>;
+  return <img className={`brand-mark ${className}`} src="/anas-wordmark.png" width="515" height="255" alt="أُنس" draggable={false} />;
 }
 
 function Atmosphere({ children, stage = false }: { children: ReactNode; stage?: boolean }) {

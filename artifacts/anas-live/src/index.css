@@ -14,7 +14,7 @@ body::after { content:""; position:fixed; inset:0; z-index:99; pointer-events:no
 .carpet-backdrop { position:fixed; inset:-5%; z-index:-3; width:110%; height:110%; object-fit:cover; filter:saturate(.82) contrast(1.08); }
 .anas-world::before,.stage-world::before { content:""; position:fixed; inset:0; z-index:-2; pointer-events:none; background:linear-gradient(100deg,rgba(12,5,4,.96) 2%,rgba(34,11,9,.74) 52%,rgba(10,5,4,.94)),radial-gradient(ellipse at 25% 0%,rgba(220,155,89,.24),transparent 45%); }
 .anas-world::after,.stage-world::after { content:""; position:fixed; inset:-20%; z-index:-1; pointer-events:none; transform:rotate(-10deg); background:linear-gradient(105deg,transparent 26%,rgba(248,190,118,.09) 31%,transparent 39%); }
-.brand-mark { display:block; height:auto; filter:drop-shadow(0 8px 15px rgba(0,0,0,.28)); }
+.brand-mark { display:block; max-width:100%; height:auto; object-fit:contain; filter:drop-shadow(0 8px 15px rgba(0,0,0,.28)); }
 .display-title,.stage-title,.stage-winner { font-family:"Aref Ruqaa", "Noto Kufi Arabic Variable", serif; font-weight:700; line-height:1.18; }
 .eyebrow,.stage-eyebrow { color:var(--anas-copper); font-size:.72rem; letter-spacing:.12em; text-align:center; }
 .fade-in { animation:fade-in .55s cubic-bezier(.2,.8,.2,1) both; }
