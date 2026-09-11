@@ -121,4 +121,3 @@ revoke all on function public.admin_action(text, jsonb, uuid)
   from public, anon, authenticated;
 grant execute on function public.admin_action(text, jsonb, uuid)
   to authenticated;
-

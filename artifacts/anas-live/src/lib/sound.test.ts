@@ -76,4 +76,3 @@ describe('EventSoundEngine', () => {
     expect(fake.context.createOscillator).toHaveBeenCalledTimes(4);
   });
 });
-
