@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Check, LogOut, Radio, RefreshCw, ShieldCheck, Signal, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react';
 import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
@@ -125,7 +125,7 @@ function PlayPage() {
     finally { setChecking(false); }
   }, [navigate]);
   useEffect(() => { void rehydrate(); }, [rehydrate, state?.updatedAt]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!state || !participant) return;
     if (state.wamdaSignal === 'green' && state.activeSignalId && greenStart.current?.signal !== state.activeSignalId) {
       greenStart.current = { signal: state.activeSignalId, at: performance.now() };
