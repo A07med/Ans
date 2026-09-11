@@ -7,6 +7,7 @@ import { useAnimatedCount } from '@/hooks/use-animated-count';
 import { backend, APP_MODE } from '@/lib/backend';
 import { adminActionErrorMessage, canClearRegistrations, CLEAR_REGISTRATIONS_PHRASE, participantTransitionCues, RESET_GAMES_CONFIRMATION, soundControlState, stayAlivePhase, stayAliveQuickTargets, stayAliveStartDisabledReason, wamdaResultCopy } from '@/lib/event-polish';
 import { validSurvivorTarget } from '@/lib/game-rules';
+import { authoritativeJoinUrl, copyJoinLink, copyTransparentQr, downloadTransparentQr, QR_COPY_FAILURE, transparentQrPng, TRANSPARENT_QR_SIZE } from '@/lib/join-qr';
 import type { AdminAction, AdminIdentity, AdminLog, LiveState, ParticipantView, WamdaResult } from '@/lib/live-types';
 import { registrationErrorMessage } from '@/lib/registration-errors';
 import { soundEngine } from '@/lib/sound';
@@ -231,6 +232,36 @@ function Metric({ label, value, detail }: { label: string; value: ReactNode; det
 function ActionButton({ children, onClick, danger = false, primary = false, disabled = false }: { children: ReactNode; onClick: () => void; danger?: boolean; primary?: boolean; disabled?: boolean }) { return <button className={`admin-action${danger ? ' danger' : ''}${primary ? ' primary' : ''}`} onClick={onClick} disabled={disabled}>{children}</button>; }
 function Section({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) { return <section className={`admin-card ${className}`}><h2>{title}</h2><div className="admin-actions">{children}</div></section>; }
 
+function JoinQrTools({ joinUrl }: { joinUrl: string }) {
+  const exportQr = useRef<SVGSVGElement | null>(null);
+  const [feedback, setFeedback] = useState('');
+  const png = () => exportQr.current ? transparentQrPng(exportQr.current) : Promise.reject(new Error('qr_not_ready'));
+  const copyQr = async () => setFeedback(exportQr.current ? await copyTransparentQr(png()) : QR_COPY_FAILURE);
+  const downloadQr = async () => {
+    try {
+      downloadTransparentQr(await png());
+      setFeedback('تم تحميل QR الشفاف ✓');
+    } catch {
+      setFeedback('تعذر تحميل QR الشفاف');
+    }
+  };
+  const copyLink = async () => setFeedback(await copyJoinLink(joinUrl));
+  return <>
+    <div className="qr-box">
+      <QRCodeSVG value={joinUrl} size={150} bgColor="#f2dfc4" fgColor="#21100d" marginSize={4} title="QR رابط التسجيل" />
+      <span dir="ltr">{joinUrl}</span>
+    </div>
+    <QRCodeSVG ref={exportQr} className="qr-export-source" aria-hidden value={joinUrl} size={TRANSPARENT_QR_SIZE} bgColor="transparent" fgColor="#111111" level="M" marginSize={4} />
+    <div className="qr-export-actions">
+      <ActionButton onClick={() => void copyQr()}>نسخ QR شفاف</ActionButton>
+      <ActionButton onClick={() => void downloadQr()}>تحميل QR شفاف</ActionButton>
+      <ActionButton onClick={() => void copyLink()}>نسخ رابط التسجيل</ActionButton>
+    </div>
+    <p className="qr-helper">لأفضل قراءة، ضع QR الشفاف على خلفية فاتحة.</p>
+    {feedback && <p className="qr-feedback" role="status" aria-live="polite">{feedback}</p>}
+  </>;
+}
+
 type StayAliveAdminProps = { state: LiveState; winnerSelected: boolean; target: string; busy: boolean; setTarget: (target: string) => void; run: (action: AdminAction, payload?: Record<string, unknown>, confirmation?: string, success?: string) => Promise<boolean>; round: (target?: number) => Promise<void> };
 function StayAliveAdmin({ state, winnerSelected, target, busy, setTarget, run, round }: StayAliveAdminProps) {
   const phase = stayAlivePhase(state, winnerSelected);
@@ -302,13 +333,13 @@ function AdminPage() {
   const round = async (override?: number) => { setBusy(true); setNotice(''); try { await backend.stayAliveRound(override ?? Number(target), crypto.randomUUID()); await live.refresh(); } catch { setNotice('العدد يجب أن يكون أقل من الباقين وأكبر من صفر'); } finally { setBusy(false); } };
   const arm = async () => { setBusy(true); setNotice('تم التسليح. التوقيت العشوائي لا يظهر للمشغّل.'); try { await backend.armWamda(); await live.refresh(); } catch { setNotice('تعذّر تسليح الإشارة أو توجد إشارة فعّالة'); } finally { setBusy(false); } };
   if (!authChecked || live.loading) return <Atmosphere><Loading /></Atmosphere>; if (!identity) return null; if (!live.state) return <Atmosphere><BackendUnavailable /></Atmosphere>;
-  const state = live.state; const joinUrl = import.meta.env.VITE_JOIN_URL || `${window.location.origin}/join`;
+  const state = live.state; const joinUrl = authoritativeJoinUrl(import.meta.env.VITE_JOIN_URL, window.location.origin);
   const latestStayAction = logs.find((log) => ['select_stay_alive_winner', 'start_stay_alive', 'reset_event_state', 'clear_all_registrations'].includes(log.action));
   const stayWinnerSelected = latestStayAction?.action === 'select_stay_alive_winner';
   const wamdaWinnerSelected = results.some((result) => result.selected);
   const clearRegistrations = async () => { if (!canClearRegistrations(clearPhrase)) return; const deletedCount = state.registered; const completed = await run('clear_all_registrations', undefined, undefined, 'تم حذف جميع التسجيلات\nالمسجلون الآن 0'); if (completed) { setClearPhrase(''); if (deletedCount === 0) setNotice('لا توجد تسجيلات للحذف\nالمسجلون الآن 0'); } };
   return <div className="admin-shell" dir="rtl"><header className="admin-header"><div><BrandMark className="w-28" /><span>غرفة التشغيل</span></div><div className="flex items-center gap-3"><Pill tone={APP_MODE === 'demo' ? 'warn' : 'good'}>{APP_MODE.toUpperCase()} BACKEND</Pill><button onClick={async () => { await backend.adminSignOut(); navigate('/admin/login'); }} aria-label="خروج"><LogOut size={18} /></button></div></header>{APP_MODE === 'demo' && <div className="demo-banner sticky top-0 z-20 rounded-none text-center">DEMO MODE — NOT FOR EVENT USE</div>}<main className="admin-main"><div className="admin-title"><div><p className="eyebrow">SYSTEM STATUS</p><h1>إدارة أُنس Live</h1></div><button className="refresh-button" onClick={() => void live.refresh()}><RefreshCw size={15} /> تحديث</button></div>{notice && <div className="admin-notice" role="status">{notice}</div>}<section className="metrics"><Metric label="المسجلون" value={state.registered} detail={`${state.connected} متصل تقريبًا`} /><Metric label="التجربة الحالية" value={state.currentExperience} detail={state.gameStatus} /><Metric label="Backend" value={APP_MODE.toUpperCase()} detail={live.error ? 'DATABASE ERROR' : 'DATABASE AVAILABLE'} /><Metric label="Realtime" value={live.realtime ? 'CONNECTED' : 'DISCONNECTED'} detail={identity.email} /></section><div className="admin-grid">
-    <Section title="التسجيل"><ActionButton onClick={() => void run('open_registration')} disabled={busy}>فتح التسجيل</ActionButton><ActionButton onClick={() => void run('close_registration')} disabled={busy}>إغلاق التسجيل</ActionButton><div className="qr-box"><QRCodeSVG value={joinUrl} size={150} bgColor="#f2dfc4" fgColor="#21100d" /><span dir="ltr">{joinUrl}</span></div></Section>
+    <Section title="التسجيل"><ActionButton onClick={() => void run('open_registration')} disabled={busy}>فتح التسجيل</ActionButton><ActionButton onClick={() => void run('close_registration')} disabled={busy}>إغلاق التسجيل</ActionButton><JoinQrTools joinUrl={joinUrl} /></Section>
     <StayAliveAdmin state={state} winnerSelected={stayWinnerSelected} target={target} busy={busy} setTarget={setTarget} run={run} round={round} />
     <Section title="وَمْضَة"><ActionButton onClick={() => void run('open_wamda')} disabled={busy}>فتح وَمْضَة</ActionButton><ActionButton onClick={() => void arm()} disabled={busy || state.activeGame !== 'wamda'}>تسليح الإشارة</ActionButton><ActionButton onClick={() => void run('cancel_arm')} disabled={busy || state.wamdaSignal !== 'red'}>إلغاء التسليح</ActionButton><ActionButton onClick={() => void run('close_wamda')} disabled={busy || state.activeGame !== 'wamda'}>إغلاق الاستجابات</ActionButton><ActionButton primary onClick={() => void run('reveal_wamda_winner')} disabled={busy || !wamdaWinnerSelected}>كشف الفائز</ActionButton>{!wamdaWinnerSelected && <p className="disabled-reason">اختر نتيجة صحيحة أولًا.</p>}<div className="section-stats"><span>صحيح <b>{state.wamdaValid}</b></span><span>مبكر <b>{state.wamdaFalseStarts}</b></span><span>معلّم <b>{state.wamdaFlagged}</b></span></div></Section>
     <section className="admin-card results-card"><h2>مراجعة النتائج</h2>{results.length ? <div className="results-list">{results.map((result, index) => <div key={result.attemptId} className={result.selected ? 'selected' : ''}><span>#{index + 1} · {result.participantName}</span><b dir="ltr">{result.reactionMs} ms</b>{result.flags.length > 0 && <Pill tone="warn">{result.flags.join(', ')}</Pill>}<button onClick={() => void run('select_wamda_result', { attemptId: result.attemptId }, `اختيار ${result.participantName}؟`)}>اختيار</button></div>)}</div> : <p className="empty">لا توجد نتائج صالحة للمراجعة بعد.</p>}</section>
