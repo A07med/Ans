@@ -1,303 +1,354 @@
-import { type ReactNode, useEffect, useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  getGetEventStateQueryKey,
-  getGetEventSummaryQueryKey,
-  getHealthCheckQueryKey,
-  useExecuteAdminAction,
-  useExecuteStayAliveRound,
-  useGetEventState,
-  useGetEventSummary,
-  useHealthCheck,
-  useRegisterParticipant,
-  useSubmitWamdaAttempt,
-} from '@workspace/api-client-react';
-import type { AdminActionInputAction, EventState, Participant } from '@workspace/api-client-react';
-import { ArrowLeft, Check, Clock3, DoorOpen, LockKeyhole, Radio, RefreshCw, ShieldCheck, Signal, Sparkles, Users, Wifi } from 'lucide-react';
-import { Link, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
+import { Check, LogOut, Radio, RefreshCw, ShieldCheck, Signal, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react';
+import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { useAnimatedCount } from '@/hooks/use-animated-count';
+import { backend, APP_MODE } from '@/lib/backend';
+import { adminActionErrorMessage, canClearRegistrations, CLEAR_REGISTRATIONS_PHRASE, participantTransitionCues, RESET_GAMES_CONFIRMATION, soundControlState, stayAlivePhase, stayAliveQuickTargets, stayAliveStartDisabledReason, wamdaResultCopy } from '@/lib/event-polish';
+import { validSurvivorTarget } from '@/lib/game-rules';
+import { authoritativeJoinUrl, copyJoinLink, copyTransparentQr, downloadTransparentQr, QR_COPY_FAILURE, transparentQrPng, TRANSPARENT_QR_SIZE } from '@/lib/join-qr';
+import type { AdminAction, AdminIdentity, AdminLog, LiveState, ParticipantView, WamdaResult } from '@/lib/live-types';
+import { registrationErrorMessage } from '@/lib/registration-errors';
+import { soundEngine } from '@/lib/sound';
 
-const queryClient = new QueryClient();
-const APP_MODE = import.meta.env.VITE_APP_MODE === 'supabase' ? 'supabase' : 'demo';
-const IS_DEMO_MODE = APP_MODE === 'demo';
+const PARTICIPANT_TOKEN_KEY = 'anas-participant-token-v1';
 
-const DEMO_STATE: EventState = {
-  registrationOpen: true,
-  currentExperience: 'lobby',
-  activeGame: null,
-  gameStatus: 'idle',
-  stageMode: 'lobby',
-  registered: 128,
-  connected: 121,
-  stayAliveRemaining: 128,
-  stayAliveRound: 0,
-  stayAliveWinner: null,
-  wamdaReady: 0,
-  wamdaResponses: 0,
-  wamdaFalseStarts: 0,
-  wamdaFastestMs: null,
-  wamdaWinner: null,
-  wamdaSignal: 'idle',
-  updatedAt: new Date().toISOString(),
-};
-
-type StateWithDemo = { state: EventState | null; offline: boolean; loading: boolean; error: boolean };
-
-function useLiveState(): StateWithDemo {
-  const query = useGetEventState({
-    query: { queryKey: getGetEventStateQueryKey(), refetchInterval: 4000 },
-  });
-  return { state: query.data ?? (IS_DEMO_MODE ? DEMO_STATE : null), offline: Boolean(query.error), loading: query.isLoading, error: Boolean(query.error) };
+function BrandMark({ className = '' }: { className?: string }) {
+  return <img className={`brand-mark ${className}`} src="/anas-wordmark.png" width="515" height="255" alt="أُنس" draggable={false} />;
 }
 
-function Shell({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
-  return (
-    <div className="app-shell" dir="rtl">
-      <header className={`mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5 md:px-10 ${compact ? 'absolute left-0 right-0 top-0 z-10' : ''}`}>
-        <div className="flex items-center gap-3" data-testid="anas-brand">
-          <div className="grid h-10 w-10 place-items-center rounded-full border border-[hsl(var(--primary)/.55)] text-sm text-[hsl(var(--primary))]">أ</div>
-          <div>
-            <div className="brand-word text-lg">أُنس</div>
-            <div className="font-mono-ui text-[9px] uppercase tracking-[.2em] text-[hsl(var(--muted-foreground))]">مساء الافتتاح</div>
-          </div>
-        </div>
-        <div className="live-mark" data-testid="status-live">الليلة تُروى معاً</div>
-      </header>
-      {children}
-    </div>
-  );
+function Atmosphere({ children, stage = false }: { children: ReactNode; stage?: boolean }) {
+  return <div className={stage ? 'stage-world' : 'anas-world'} dir="rtl"><img className="carpet-backdrop" src="/anas-carpet-clean-v2.jpg" alt="" aria-hidden="true" />{children}</div>;
+}
+
+function useLiveState() {
+  const [state, setState] = useState<LiveState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [realtime, setRealtime] = useState(false);
+  const refresh = useCallback(async () => {
+    try { setState(await backend.getState()); setError(false); } catch { setError(true); } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    void refresh();
+    const subscription = backend.subscribe(() => void refresh(), setRealtime);
+    const poll = window.setInterval(() => void refresh(), 15_000);
+    return () => { subscription.unsubscribe(); window.clearInterval(poll); };
+  }, [refresh]);
+  return { state, loading, error, realtime, refresh };
 }
 
 function BackendUnavailable() {
-  return <div className="panel rounded-2xl p-7 text-center md:p-10" data-testid="backend-unavailable"><div className="mx-auto mb-5 h-3 w-3 rounded-full bg-[hsl(var(--destructive))] shadow-[0_0_0_7px_hsl(var(--destructive)/.12)]" /><h1 className="arabic-display text-3xl">الإشارة غير متاحة</h1><p className="mx-auto mt-4 max-w-md text-sm leading-loose text-[hsl(var(--muted-foreground))]">وضع Supabase مفعّل، لكن لم تصلنا خدمة الحدث بعد. لا نعرض بيانات تجريبية مكان البيانات الحقيقية.</p></div>;
+  return <div className="glass-card mx-auto max-w-md p-8 text-center"><WifiOff className="mx-auto text-[var(--anas-red)]" size={30} /><h1 className="display-title mt-5 text-3xl">الإشارة غير متاحة</h1><p className="mt-4 text-sm leading-8 text-[var(--anas-muted)]">وضع Supabase مفعّل، لكن خدمة الحدث لا تستجيب. لم نضع أي بيانات تجريبية مكان الحقيقة.</p></div>;
 }
 
-function LoadingBlock({ label = 'نحضّر الغرفة' }: { label?: string }) {
-  return <div className="flex min-h-[12rem] items-center justify-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/.5)] text-sm text-[hsl(var(--muted-foreground))]" data-testid="loading-state"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-[hsl(var(--primary))]" />{label}</div>;
+function Loading() { return <div className="grid min-h-[60dvh] place-items-center"><span className="warm-pulse text-sm text-[var(--anas-sand)]">نستعيد اللحظة…</span></div>; }
+function Pill({ children, tone = 'quiet' }: { children: ReactNode; tone?: 'quiet' | 'good' | 'warn' | 'bad' }) { return <span className={`pill pill-${tone}`}>{children}</span>; }
+
+function SoundControl({ stage = false, onEnabled }: { stage?: boolean; onEnabled?: () => void }) {
+  const [, redraw] = useState(0);
+  const [feedback, setFeedback] = useState('');
+  useEffect(() => soundEngine.subscribe(() => redraw((value) => value + 1)), []);
+  const unlock = async () => {
+    setFeedback('');
+    try {
+      await soundEngine.unlock();
+      setFeedback('تم تفعيل الصوت ✓');
+      window.setTimeout(() => setFeedback(''), 2_500);
+      onEnabled?.();
+    } catch {
+      setFeedback('تعذّر تشغيل الصوت. اضغط مجددًا وتأكد أن الجهاز ليس على الوضع الصامت.');
+    }
+  };
+  const controlState = soundControlState(soundEngine.contextState, soundEngine.isMuted);
+  const status = controlState === 'playing' ? 'ON' : controlState === 'muted' ? 'MUTED' : controlState === 'resume' ? 'SUSPENDED' : 'OFF';
+  return <div className={`audio-panel ${stage ? 'stage-audio-panel' : ''}`}>
+    <span className={`audio-status audio-${status.toLowerCase()}`}>{stage ? 'Sound' : 'الصوت'}: {status}</span>
+    {(controlState === 'enable' || controlState === 'resume') ? <>
+      {!stage && <span className="audio-copy">الصوت غير مفعّل</span>}
+      <button className="sound-control" onClick={() => void unlock()}><Volume2 size={15} />{stage ? 'تفعيل صوت العرض' : controlState === 'resume' || soundEngine.preferred ? 'إعادة تفعيل الصوت 🔊' : 'تفعيل الصوت 🔊'}</button>
+    </> : <>
+      <button className="sound-control" onClick={() => soundEngine.testSound()} disabled={soundEngine.isMuted}><Volume2 size={15} />اختبار الصوت</button>
+      <button className="sound-control" aria-pressed={soundEngine.isMuted} onClick={() => soundEngine.setMuted(!soundEngine.isMuted)}>{soundEngine.isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}{soundEngine.isMuted ? 'تشغيل' : 'كتم'}</button>
+    </>}
+    {feedback && <span className="audio-feedback" role="status">{feedback}</span>}
+  </div>;
 }
 
-function StatePill({ children, tone = 'quiet' }: { children: ReactNode; tone?: 'quiet' | 'green' | 'red' | 'gold' }) {
-  const tones = { quiet: 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]', green: 'bg-[hsl(163_24%_42%/.18)] text-[hsl(153_48%_70%)]', red: 'bg-[hsl(var(--destructive)/.14)] text-[hsl(7_70%_72%)]', gold: 'bg-[hsl(var(--primary)/.14)] text-[hsl(var(--primary))]' };
-  return <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] ${tones[tone]}`} data-testid="status-pill">{children}</span>;
-}
-
-function Home() {
-  return (
-    <Shell compact>
-      <main className="mx-auto flex min-h-[100dvh] w-full max-w-7xl items-center px-5 pb-14 pt-28 md:px-10">
-        <div className="grid w-full items-end gap-14 lg:grid-cols-[1.1fr_.9fr] lg:gap-24">
-          <section className="fade-up max-w-3xl">
-            <div className="live-mark mb-8">الليلة تُروى معاً</div>
-            <h1 className="arabic-display max-w-2xl text-[clamp(3.8rem,10vw,9rem)] text-[hsl(var(--foreground))]">أُنس<span className="text-[hsl(var(--primary))]">.</span></h1>
-            <p className="mt-7 max-w-xl text-lg leading-loose text-[hsl(var(--muted-foreground))] md:text-xl">غرفة حيّة لافتتاحية الأنشطة الطلابية في كلية العلوم. ادخل باسمك، واترك الباقي للّيلة.</p>
-            <div className="mt-10 flex flex-wrap gap-3">
-              <Link href="/join" className="button-primary no-underline" data-testid="button-join-now">ادخل الغرفة <ArrowLeft size={16} /></Link>
-            </div>
-            <div className="mt-16 flex items-center gap-8 border-t border-[hsl(var(--border))] pt-5 text-xs text-[hsl(var(--muted-foreground))]">
-              <span><b className="font-mono-ui text-[hsl(var(--primary))]">16:9</b> شاشة المسرح</span>
-              <span><b className="font-mono-ui text-[hsl(var(--primary))]">01</b> ليلة واحدة</span>
-              <span><b className="font-mono-ui text-[hsl(var(--primary))]">∞</b> لحظات</span>
-            </div>
-          </section>
-          <section className="fade-up-delay relative mx-auto w-full max-w-md">
-            <div className="absolute -inset-8 rounded-[50%] border border-[hsl(var(--primary)/.12)]" />
-            <div className="absolute -inset-16 rounded-[50%] border border-[hsl(var(--primary)/.07)]" />
-            <div className="panel relative aspect-[4/5] overflow-hidden rounded-[1.4rem] p-7">
-              <div className="absolute inset-0 opacity-50" style={{ background: 'linear-gradient(140deg, transparent 30%, rgba(151,76,38,.32) 30%, transparent 58%), radial-gradient(ellipse at 50% 10%, rgba(227,180,133,.2), transparent 35%)' }} />
-              <div className="relative flex h-full flex-col justify-between">
-                <div className="flex items-start justify-between text-[10px] text-[hsl(var(--muted-foreground))]"><span>الاثنين · ١٤ سبتمبر</span><span className="font-mono-ui">19:03</span></div>
-                <div className="text-center">
-                  <div className="mb-5 text-xs tracking-[.4em] text-[hsl(var(--primary))]">COLLEGE OF SCIENCE</div>
-                  <div className="arabic-display text-[clamp(3rem,12vw,6rem)] text-[hsl(var(--foreground))]">أُنس</div>
-                  <div className="mx-auto mt-5 h-px w-24 bg-[hsl(var(--primary)/.6)]" />
-                  <p className="mt-5 text-sm text-[hsl(var(--muted-foreground))]">الأمسية التعريفية</p>
-                </div>
-                <div className="flex items-end justify-between text-xs text-[hsl(var(--muted-foreground))]"><span>قاعة المؤتمرات</span><span className="font-mono-ui text-[hsl(var(--primary))]">LIVE / 01</span></div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </main>
-    </Shell>
-  );
+function PublicHome() {
+  const [, navigate] = useLocation();
+  useEffect(() => navigate('/join', { replace: true }), [navigate]);
+  return null;
 }
 
 function JoinPage() {
+  const { state, loading, error } = useLiveState();
+  const [, navigate] = useLocation();
   const [form, setForm] = useState({ name: '', phone: '' });
-  const [, setLocation] = useLocation();
-  const register = useRegisterParticipant();
-  const { state, offline } = useLiveState();
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [sessionCheckFailed, setSessionCheckFailed] = useState(false);
   useEffect(() => {
-    const saved = localStorage.getItem('anas-participant');
-    if (saved) setLocation('/play');
-  }, [setLocation]);
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (form.name.trim().length < 2 || form.phone.trim().length < 6 || register.isPending) return;
-    register.mutate({ data: { name: form.name.trim(), phone: form.phone.trim() } }, {
-      onSuccess: (data) => { localStorage.setItem('anas-participant', JSON.stringify(data)); setLocation('/play'); },
-      onError: () => {
-        if (!IS_DEMO_MODE) return;
-        const local = { id: `local-${Date.now()}`, name: form.name.trim(), token: `demo-${Date.now()}` };
-        localStorage.setItem('anas-participant', JSON.stringify(local));
-        setLocation('/play');
-      },
-    });
+    const token = localStorage.getItem(PARTICIPANT_TOKEN_KEY);
+    if (!token) { setCheckingSession(false); return; }
+    void backend.validateParticipant(token)
+      .then((participant) => { if (participant) navigate('/play', { replace: true }); else { localStorage.removeItem(PARTICIPANT_TOKEN_KEY); setCheckingSession(false); } })
+      .catch(() => { setSessionCheckFailed(true); setCheckingSession(false); });
+  }, [navigate]);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try { const session = await backend.register(form.name, form.phone); localStorage.setItem(PARTICIPANT_TOKEN_KEY, session.token); navigate('/play', { replace: true }); }
+    catch (cause) { setMessage(registrationErrorMessage(cause)); }
+    finally { setBusy(false); }
   };
-  if (!state) return <Shell><main className="mx-auto flex min-h-[calc(100dvh-84px)] max-w-md items-center px-5 py-12"><BackendUnavailable /></main></Shell>;
-  return (
-    <Shell>
-      <main className="mx-auto grid min-h-[calc(100dvh-84px)] w-full max-w-6xl items-center gap-12 px-5 py-12 md:grid-cols-[.8fr_1.2fr] md:px-10">
-        <section className="fade-up order-2 md:order-1">
-          <div className="mb-7 inline-flex h-12 w-12 items-center justify-center rounded-full border border-[hsl(var(--primary)/.5)] text-[hsl(var(--primary))]"><Radio size={20} /></div>
-          <p className="live-mark mb-5">تسجيل الحضور</p>
-          <h1 className="arabic-display text-4xl leading-[1.35] md:text-6xl">خلّ اسمك<br /><span className="text-[hsl(var(--primary))]">بيننا.</span></h1>
-          <p className="mt-7 max-w-sm leading-loose text-[hsl(var(--muted-foreground))]">التسجيل مرة واحدة فقط. بعد الدخول، ستبقى هذه الشاشة معك طوال الأمسية.</p>
-          <div className="mt-9 flex flex-wrap gap-3"><StatePill tone={state.registrationOpen ? 'green' : 'red'}>{state.registrationOpen ? 'التسجيل مفتوح' : 'التسجيل مغلق'}</StatePill>{offline && <StatePill tone="gold">وضع العرض المحلي</StatePill>}</div>
-        </section>
-        <section className="panel fade-up-delay rounded-2xl p-6 md:p-10">
-          <form onSubmit={submit} className="space-y-6" data-testid="form-register">
-              <div className="flex items-center justify-between border-b border-[hsl(var(--border))] pb-5"><div><div className="font-display text-xl">بياناتك</div><div className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">لن تظهر للآخرين</div></div><span className="font-mono-ui text-xs text-[hsl(var(--primary))]">01 / 02</span></div>
-              <label className="block"><span className="mb-2 block text-sm">الاسم</span><input className="input-field" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="كيف نناديك؟" autoComplete="name" data-testid="input-name" /></label>
-              <label className="block"><span className="mb-2 block text-sm">رقم الجوال</span><input className="input-field text-left" dir="ltr" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="05X XXX XXXX" autoComplete="tel" data-testid="input-phone" /></label>
-              {register.error && <div className="rounded-lg border border-[hsl(var(--destructive)/.5)] bg-[hsl(var(--destructive)/.1)] p-3 text-sm text-[hsl(7_70%_72%)]" data-testid="error-register">{IS_DEMO_MODE ? 'تعذّر الاتصال؛ يمكن متابعة وضع العرض المحلي.' : 'تعذّر الاتصال بخدمة التسجيل. لم يتم حفظ بياناتك.'}</div>}
-              <button type="submit" className="button-primary w-full" disabled={!state.registrationOpen || register.isPending} data-testid="button-submit-registration">{register.isPending ? 'نفتح لك الباب…' : 'دخول الأمسية'} <ArrowLeft size={16} /></button>
-              <div className="flex items-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]"><LockKeyhole size={13} /> رقمك للتسجيل فقط، ولا يُعرض على الشاشة.</div>
-            </form>
-        </section>
-      </main>
-    </Shell>
-  );
+  if (loading || checkingSession) return <Atmosphere><Loading /></Atmosphere>;
+  if (sessionCheckFailed || (error && !state)) return <Atmosphere><main className="grid min-h-screen place-items-center p-6"><BackendUnavailable /></main></Atmosphere>;
+  return <Atmosphere><main className="public-page"><section className="join-card fade-in">
+    <BrandMark className="mx-auto w-56 sm:w-64" />
+    <p className="eyebrow mt-2">الأمسية الافتتاحية</p><p className="mt-2 text-center text-xs text-[var(--anas-muted)]">جماعة الأنشطة الطلابية — كلية العلوم</p>
+    <h1 className="display-title mt-8 text-center text-4xl sm:text-5xl">أهلًا بك في أُنس</h1>
+    <p className="mx-auto mt-4 max-w-sm text-center text-sm leading-8 text-[var(--anas-muted)]">سجّل مرة واحدة، وخلك قريب. هذه الصفحة بترافقك طوال الأمسية.</p>
+    {state?.registrationOpen ? <form className="mt-8 space-y-5" onSubmit={submit}>
+      <label className="field-label">الاسم<input className="field" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} autoComplete="name" placeholder="كيف نناديك؟" required /></label>
+      <label className="field-label">رقم الهاتف<input className="field text-left" dir="ltr" inputMode="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} autoComplete="tel" placeholder="9XXXXXXX" required /></label>
+      {message && <p className="error-note" role="alert">{message}</p>}
+      <button className="primary-button w-full" disabled={busy}>{busy ? 'لحظة…' : 'دخول أُنس'}</button>
+      <p className="text-center text-[11px] leading-6 text-[var(--anas-muted)]">رقمك للتسجيل والتحقق فقط، ولن يظهر للجمهور أو على المسرح.</p>
+    </form> : <div className="closed-note mt-8"><Radio className="mx-auto mb-4" /><strong>اكتمل التسجيل لهذه الفقرة</strong><span>إذا سجلت سابقًا، افتح نفس المتصفح للعودة تلقائيًا.</span></div>}
+  </section></main></Atmosphere>;
 }
 
-function SuccessCard({ participant, demo }: { participant: Participant; demo: boolean }) {
-  return <div className="py-8 text-center" data-testid="registration-success"><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[hsl(var(--accent)/.2)] text-[hsl(153_48%_70%)]"><Check size={27} /></div><div className="mt-7 text-xs text-[hsl(var(--muted-foreground))]">أهلاً بك</div><h2 className="arabic-display mt-2 text-4xl text-[hsl(var(--primary))]">{participant.name}</h2><p className="mx-auto mt-5 max-w-sm leading-loose text-[hsl(var(--muted-foreground))]">تم تسجيل حضورك. احتفظ بهذه الصفحة؛ منها ستعرف متى يبدأ كل شيء.</p>{demo && <div className="mx-auto mt-5 max-w-xs rounded border border-[hsl(var(--primary)/.25)] p-2 text-[11px] text-[hsl(var(--primary))]">تم الحفظ محلياً إلى أن تعود الإشارة.</div>}<Link href="/play" className="button-primary mt-8 no-underline" data-testid="link-go-play">افتح غرفة الحضور <ArrowLeft size={16} /></Link></div>;
-}
-
-function ExperienceCopy({ state }: { state: EventState }) {
-  if (state.currentExperience === 'stay_alive') return <><div className="live-mark mb-5">اللعبة الأولى</div><h1 className="arabic-display text-5xl md:text-7xl">باقي معنا؟</h1><p className="mt-5 leading-loose text-[hsl(var(--muted-foreground))]">لا تغلق الصفحة. الجولة القادمة ستظهر هنا.</p></>;
-  if (state.currentExperience === 'wamda') return <><div className="live-mark mb-5">لحظة خاطفة</div><h1 className="arabic-display text-5xl md:text-7xl">وَمْضَة</h1><p className="mt-5 leading-loose text-[hsl(var(--muted-foreground))]">اضغط أخضر فقط عندما ترى الإشارة. الأحمر فخ.</p></>;
-  if (state.currentExperience === 'intermission') return <><div className="live-mark mb-5">فاصل قصير</div><h1 className="arabic-display text-5xl md:text-7xl">خذ نفساً.</h1><p className="mt-5 leading-loose text-[hsl(var(--muted-foreground))]">نعود بعد قليل. ابقَ قريباً.</p></>;
-  if (state.currentExperience === 'end') return <><div className="live-mark mb-5">نهاية الأمسية</div><h1 className="arabic-display text-5xl md:text-7xl">شكراً لأنك كنت هنا.</h1><p className="mt-5 leading-loose text-[hsl(var(--muted-foreground))]">بعض الليالي لا تنتهي عند خروجنا منها.</p></>;
-  return <><div className="live-mark mb-5">أهلاً بك في الغرفة</div><h1 className="arabic-display text-5xl md:text-7xl">ننتظر<br /><span className="text-[hsl(var(--primary))]">الإشارة.</span></h1><p className="mt-5 leading-loose text-[hsl(var(--muted-foreground))]">اجلس في مكانك. ستبدأ الحكاية عندما تضيء الشاشة.</p></>;
+function stayAliveCopy(status: ParticipantView['stayAliveStatus'], revealed: boolean) {
+  if (status === 'winner' && revealed) return { title: 'أنت الفائز 🎉', copy: 'باقي معنا حتى النهاية' };
+  if (status === 'winner' || status === 'finalist') return { title: 'أنت من آخر 3 🔥', copy: 'لا تقفل الصفحة' };
+  if (status === 'eliminated') return { title: 'انقطعت إشارتك', copy: 'خرجت من هذا السحب\nنشوفك في وَمْضَة 👀' };
+  return { title: 'باقي معنا 🟢', copy: 'استعد للجولة القادمة' };
 }
 
 function PlayPage() {
-  const { state, offline, loading } = useLiveState();
-  const [participant, setParticipant] = useState<Participant | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-  const [, setLocation] = useLocation();
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const attempt = useSubmitWamdaAttempt();
-  const [attemptState, setAttemptState] = useState<'ready' | 'sent' | 'false'>('ready');
-  useEffect(() => {
-    const value = localStorage.getItem('anas-participant');
-    if (value) setParticipant(JSON.parse(value));
-    else setLocation('/join');
-    setHydrated(true);
-  }, [setLocation]);
-  const liveState = state ?? DEMO_STATE;
-  useEffect(() => { if (liveState.currentExperience === 'wamda' && liveState.wamdaSignal === 'green' && !startedAt) setStartedAt(performance.now()); }, [liveState.currentExperience, liveState.wamdaSignal, startedAt]);
-  const clickWamda = () => {
-    const falseStart = liveState.wamdaSignal !== 'green';
-    const reactionMs = falseStart || !startedAt ? 0 : Math.round(performance.now() - startedAt);
-    setAttemptState(falseStart ? 'false' : 'sent');
-    attempt.mutate({ data: { participantToken: participant?.token ?? 'demo-token', sessionId: `session-${Date.now()}`, signalId: `signal-${Date.now()}`, reactionMs, falseStart } });
+  const { state, loading, error, realtime } = useLiveState();
+  const [, navigate] = useLocation();
+  const [participant, setParticipant] = useState<ParticipantView | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [tapBusy, setTapBusy] = useState(false);
+  const greenStart = useRef<{ signal: string; at: number } | null>(null);
+  const previousState = useRef<LiveState | null>(null);
+  const previousParticipant = useRef<ParticipantView | null>(null);
+  const rehydrate = useCallback(async () => {
+    const token = localStorage.getItem(PARTICIPANT_TOKEN_KEY);
+    if (!token) { navigate('/join', { replace: true }); return; }
+    try {
+      const view = await backend.validateParticipant(token);
+      if (!view) { localStorage.removeItem(PARTICIPANT_TOKEN_KEY); navigate('/join', { replace: true }); return; }
+      setParticipant(view);
+    } catch { /* Keep the last validated view during a transient outage. */ }
+    finally { setChecking(false); }
+  }, [navigate]);
+  useEffect(() => { void rehydrate(); }, [rehydrate, state?.updatedAt]);
+  useLayoutEffect(() => {
+    if (!state || !participant) return;
+    if (state.currentExperience === 'wamda' && state.wamdaSignal === 'red') soundEngine.startTension('low');
+    else soundEngine.stopTension();
+    if (state.wamdaSignal === 'green' && state.activeSignalId && greenStart.current?.signal !== state.activeSignalId) {
+      greenStart.current = { signal: state.activeSignalId, at: performance.now() };
+      soundEngine.play('wamda-start');
+      navigator.vibrate?.(35);
+    }
+    for (const cue of participantTransitionCues(previousState.current, state, previousParticipant.current, participant)) if (cue !== 'wamda-start') soundEngine.play(cue);
+    previousState.current = state;
+    previousParticipant.current = participant;
+  }, [state, participant]);
+  useEffect(() => () => soundEngine.stopTension(), []);
+  const tap = async () => {
+    if (!state?.activeGameSessionId || !state.activeSignalId || !participant || participant.wamdaAttempt !== 'none' || tapBusy) return;
+    const token = localStorage.getItem(PARTICIPANT_TOKEN_KEY);
+    if (!token) return;
+    const falseStart = state.wamdaSignal !== 'green';
+    const reaction = falseStart || !greenStart.current ? 0 : Math.max(1, Math.round(performance.now() - greenStart.current.at));
+    setTapBusy(true);
+    try { setParticipant(await backend.submitWamda(token, state.activeGameSessionId, state.activeSignalId, reaction, falseStart)); }
+    catch { await rehydrate(); }
+    finally { setTapBusy(false); }
   };
-  if (!hydrated || loading) return <Shell><main className="mx-auto max-w-3xl px-5 py-32"><LoadingBlock label="نستعيد حضورك" /></main></Shell>;
-  if (!state) return <Shell><main className="mx-auto flex min-h-[calc(100dvh-84px)] max-w-md items-center px-5 py-12"><BackendUnavailable /></main></Shell>;
-  return <Shell><main className="mx-auto min-h-[calc(100dvh-82px)] w-full max-w-6xl px-5 py-10 md:px-10">
-     <div className="mb-12 flex items-center justify-between"><div><div className="live-mark">غرفة الحضور</div><div className="mt-3 text-sm text-[hsl(var(--muted-foreground))]">{participant ? `أهلاً ${participant.name}` : 'نستعيد حضورك'}</div></div><div className="flex items-center gap-3">{offline && <StatePill tone="gold">عرض محلي</StatePill>}</div></div>
-    <div className="grid gap-10 lg:grid-cols-[1fr_.72fr] lg:items-center">
-      <section className="fade-up">
-        <ExperienceCopy state={state} />
-        {state.currentExperience === 'stay_alive' && <div className="mt-10 flex items-center gap-8"><div><div className="font-mono-ui text-5xl text-[hsl(var(--primary))]">{state.stayAliveRemaining}</div><div className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">باقون</div></div><div className="h-12 w-px bg-[hsl(var(--border))]" /><div><div className="font-mono-ui text-5xl">{String(state.stayAliveRound ?? 0).padStart(2, '0')}</div><div className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">الجولة</div></div></div>}
-      </section>
-      <section className="panel fade-up-delay rounded-2xl p-7 md:p-10">
-        {state.currentExperience === 'wamda' ? <div className="text-center"><div className={`signal ${state.wamdaSignal === 'green' ? 'signal-green' : state.wamdaSignal === 'red' ? 'signal-red' : 'signal-idle'}`}><div><Signal className="mx-auto mb-4" size={27} /><div className="font-display text-2xl">{state.wamdaSignal === 'green' ? 'الآن' : state.wamdaSignal === 'red' ? 'لا تضغط' : 'انتظر'}</div><div className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">{attemptState === 'sent' ? 'وصلت استجابتك' : attemptState === 'false' ? 'إشارة مبكرة' : 'أمسك اللحظة'}</div></div></div><button className="button-primary mt-8 w-full" onClick={clickWamda} disabled={!participant || state.wamdaSignal === 'closed' || attempt.isPending || attemptState === 'sent'} data-testid="button-wamda-reaction">استجب للإشارة</button></div>
-          : <div><div className="mb-5 flex items-center justify-between border-b border-[hsl(var(--border))] pb-4 text-xs text-[hsl(var(--muted-foreground))]"><span>حالة الغرفة</span><StatePill tone={state.gameStatus === 'live' ? 'green' : 'quiet'}>{state.gameStatus === 'live' ? 'مباشر الآن' : state.gameStatus === 'complete' ? 'اكتملت' : 'على الاستعداد'}</StatePill></div><div className="space-y-5 text-sm"><div className="flex items-center justify-between"><span className="text-[hsl(var(--muted-foreground))]">الحضور المتصل</span><span className="font-mono-ui text-[hsl(var(--primary))]">{state.connected}</span></div><div className="flex items-center justify-between"><span className="text-[hsl(var(--muted-foreground))]">آخر تحديث</span><span className="font-mono-ui text-xs">{new Date(state.updatedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span></div></div><div className="mt-10 border-t border-[hsl(var(--border))] pt-5 text-xs leading-loose text-[hsl(var(--muted-foreground))]">اترك الصوت مفتوحاً. كل التغييرات تصل إلى هذه الغرفة تلقائياً.</div></div>}
-      </section>
-    </div>
-  </main></Shell>;
+  if (loading || checking) return <Atmosphere><Loading /></Atmosphere>;
+  if (error && !state) return <Atmosphere><main className="grid min-h-screen place-items-center p-6"><BackendUnavailable /></main></Atmosphere>;
+  if (!state || !participant) return null;
+  const stay = stayAliveCopy(participant.stayAliveStatus, state.gameStatus === 'revealed');
+  const wamdaResult = wamdaResultCopy(participant);
+  return <Atmosphere><main className={`play-page experience-${state.currentExperience}`}>
+    <header className="play-header"><BrandMark className="w-32" /><div className="play-tools"><SoundControl onEnabled={() => { if (state.currentExperience === 'wamda' && state.wamdaSignal === 'red') soundEngine.startTension('low'); }} /><span className="connection-dot">{realtime ? <Wifi size={13} /> : <WifiOff size={13} />} {realtime ? 'متصل' : 'نستعيد الاتصال'}</span></div></header>
+    <section className="experience-card fade-in">
+      {state.currentExperience === 'lobby' && <div className="text-center"><Check className="mx-auto text-[var(--anas-green)]" size={34} /><h1 className="display-title mt-6 text-4xl">تم تسجيلك ✓</h1><p className="mt-5 whitespace-pre-line leading-9 text-[var(--anas-muted)]">خلك قريب…{`\n`}يمكن نحتاجك بعد شوي 👀</p></div>}
+      {state.currentExperience === 'intermission' && <div className="text-center"><p className="eyebrow">فاصل قصير</p><h1 className="display-title mt-6 text-5xl">خذ نفسًا</h1><p className="mt-5 text-[var(--anas-muted)]">نرجع بعد شوي. خلك قريب.</p></div>}
+      {state.currentExperience === 'end' && <div className="text-center"><BrandMark className="mx-auto w-60" /><h1 className="display-title mt-6 text-4xl">شكرًا لأنك كنت معنا</h1></div>}
+      {state.currentExperience === 'stay_alive' && <div className={`text-center stay-${participant.stayAliveStatus ?? 'alive'}`}><p className="eyebrow">باقي معنا؟ · الجولة {state.stayAliveRound}</p><div className="signal-orbit mx-auto mt-8"><Signal size={42} /></div><h1 className="display-title mt-8 text-5xl">{stay.title}</h1><p className="mt-5 whitespace-pre-line leading-9 text-[var(--anas-muted)]">{stay.copy}</p></div>}
+      {state.currentExperience === 'wamda' && <div className="text-center"><p className="eyebrow">وَمْضَة</p><h1 className="display-title mt-5 text-4xl">جهّز إصبعك</h1>{wamdaResult ? <div className={`result-message ${wamdaResult.kind === 'false-start' ? 'bad' : 'good'} result-${wamdaResult.kind}`}><strong>{wamdaResult.title}</strong><span className={wamdaResult.kind === 'pending' || wamdaResult.kind === 'winner' ? 'latin-number' : ''}>{wamdaResult.primary}</span>{wamdaResult.secondary && <small className={wamdaResult.kind === 'winner' ? 'latin-number' : ''}>{wamdaResult.secondary}</small>}</div> : <button aria-label={state.wamdaSignal === 'green' ? 'اضغط الآن' : 'انتظر'} className={`reaction-lamp lamp-${state.wamdaSignal}`} onPointerDown={() => void tap()} disabled={tapBusy || state.wamdaSignal === 'closed'}><span>{state.wamdaSignal === 'green' ? 'اضغط!' : state.wamdaSignal === 'closed' ? 'أُغلقت الجولة' : 'انتظر...'}</span></button>}</div>}
+    </section><p className="participant-name">أهلًا {participant.name}</p>
+  </main></Atmosphere>;
 }
 
-function StageChrome({ children, label }: { children: ReactNode; label: string }) {
-  return <div className="stage-screen" dir="rtl"><div className="stage-inner"><div className="flex items-center justify-between"><div className="stage-kicker">أُنس · كلية العلوم</div><div className="stage-kicker font-mono-ui">LIVE / {label}</div></div>{children}<div><div className="stage-rule mb-4" /><div className="flex justify-between text-[clamp(.5rem,1vw,.75rem)] text-[rgba(245,227,201,.46)]"><span>الأمسية التعريفية للأنشطة الطلابية</span><span>جامعة الملك سعود</span></div></div></div></div>;
+function StageFrame({ children, code, onSoundEnabled }: { children: ReactNode; code: string; onSoundEnabled?: () => void }) {
+  return <Atmosphere stage><main className="stage-frame"><header><BrandMark className="w-[clamp(9rem,16vw,18rem)]" /><div className="stage-tools"><SoundControl stage onEnabled={onSoundEnabled} /><span className="stage-meta">LIVE / {code}</span></div></header>{children}<footer><span>الأمسية الافتتاحية — جماعة الأنشطة الطلابية</span><span>كلية العلوم</span></footer></main></Atmosphere>;
 }
 
-function StagePage({ mode }: { mode: 'alive' | 'wamda' }) {
-  const { state } = useLiveState();
-  if (!state) return <div className="stage-screen" dir="rtl"><div className="w-full max-w-md px-6"><BackendUnavailable /></div></div>;
-  if (mode === 'alive') return <StageChrome label="01"><div className="flex flex-1 flex-col items-center justify-center text-center"><div className="stage-kicker mb-7">الجولة {String(state.stayAliveRound ?? 0).padStart(2, '0')}</div><div className="stage-title">باقي معنا؟</div><div className="stage-copy mt-6">{state.gameStatus === 'live' ? 'ابقَ في مكانك. لا تغادر.' : state.gameStatus === 'complete' ? `الفائز: ${state.stayAliveWinner ?? 'سيُعلن قريباً'}` : 'سنبدأ بعد لحظات'}</div><div className="mt-12 flex items-center gap-12"><div><div className="font-mono-ui text-5xl text-[#dfb78c]">{state.stayAliveRemaining}</div><div className="mt-1 text-xs text-[rgba(245,227,201,.5)]">باقون</div></div><div className="h-12 w-px bg-[rgba(245,227,201,.2)]" /><div><div className="font-mono-ui text-5xl text-[#dfb78c]">{state.registered}</div><div className="mt-1 text-xs text-[rgba(245,227,201,.5)]">دخلوا الغرفة</div></div></div></div></StageChrome>;
-  const signal = state.wamdaSignal ?? 'idle';
-  return <StageChrome label="02"><div className="flex flex-1 flex-col items-center justify-center text-center"><div className="stage-kicker mb-7">ردّ الفعل الأسرع</div><div className="stage-title">وَمْضَة</div><div className="stage-copy mt-5">{signal === 'green' ? 'الآن.' : signal === 'red' ? 'لا تضغط.' : 'انتظر الإشارة.'}</div><div className={`signal mt-10 ${signal === 'green' ? 'signal-green' : signal === 'red' ? 'signal-red' : 'signal-idle'}`}><div className="font-display text-3xl">{signal === 'green' ? 'أخضر' : signal === 'red' ? 'أحمر' : '—'}</div></div><div className="mt-8 font-mono-ui text-sm text-[rgba(245,227,201,.6)]">{state.wamdaResponses ?? 0} استجابة · {state.wamdaFalseStarts ?? 0} إشارة مبكرة</div></div></StageChrome>;
-}
-
-function actionState(action: AdminActionInputAction, current: EventState): EventState {
-  const next = { ...current, updatedAt: new Date().toISOString() };
-  if (action === 'open_registration') next.registrationOpen = true;
-  if (action === 'close_registration') next.registrationOpen = false;
-  if (action === 'start_stay_alive') { next.currentExperience = 'stay_alive'; next.activeGame = 'stay_alive'; next.gameStatus = 'live'; next.stageMode = 'alive'; next.stayAliveRound = 1; }
-  if (action === 'pause') next.gameStatus = 'paused';
-  if (action === 'return_lobby') { next.currentExperience = 'lobby'; next.activeGame = null; next.gameStatus = 'idle'; next.stageMode = 'lobby'; }
-  if (action === 'open_wamda') { next.currentExperience = 'wamda'; next.activeGame = 'wamda'; next.gameStatus = 'selection'; next.stageMode = 'wamda'; next.wamdaSignal = 'idle'; }
-  if (action === 'arm_wamda') { next.gameStatus = 'live'; next.wamdaSignal = 'red'; }
-  if (action === 'cancel_arm') { next.gameStatus = 'selection'; next.wamdaSignal = 'idle'; }
-  if (action === 'close_wamda') { next.gameStatus = 'complete'; next.wamdaSignal = 'closed'; }
-  if (action === 'select_result') next.gameStatus = 'selection';
-  if (action === 'reveal_winner') next.gameStatus = 'revealed';
-  if (action === 'reset_game') { next.gameStatus = 'idle'; next.activeGame = null; next.currentExperience = 'lobby'; next.stageMode = 'lobby'; next.wamdaSignal = 'idle'; }
-  return next;
+function StagePage({ game }: { game: 'alive' | 'wamda' }) {
+  const { state, loading } = useLiveState();
+  const previousSignal = useRef<LiveState['wamdaSignal'] | null>(null);
+  const previousGameStatus = useRef<LiveState['gameStatus'] | null>(null);
+  const animatedCount = useAnimatedCount(state?.stayAliveRemaining ?? 0, {
+    onStart: () => soundEngine.play('count-start'),
+    onTick: () => soundEngine.play('count-tick'),
+    onLand: (target) => soundEngine.play(target === 1 ? 'count-one' : target === 3 ? 'count-three' : 'count-land'),
+  });
+  useEffect(() => {
+    if (!state) return;
+    if (game === 'wamda') {
+      if (state.wamdaSignal === 'red' && previousSignal.current !== 'red') soundEngine.startTension();
+      if (state.wamdaSignal !== 'red') soundEngine.stopTension();
+      if (previousSignal.current === 'red' && state.wamdaSignal === 'green') soundEngine.play('wamda-start');
+    }
+    if (previousGameStatus.current && previousGameStatus.current !== 'revealed' && state.gameStatus === 'revealed') soundEngine.play('winner');
+    previousSignal.current = state.wamdaSignal;
+    previousGameStatus.current = state.gameStatus;
+  }, [game, state?.gameStatus, state?.wamdaSignal]);
+  useEffect(() => () => soundEngine.stopTension(), []);
+  if (loading) return <Atmosphere stage><Loading /></Atmosphere>;
+  if (!state) return <Atmosphere stage><BackendUnavailable /></Atmosphere>;
+  const onSoundEnabled = () => { if (game === 'wamda' && state.wamdaSignal === 'red') soundEngine.startTension(); };
+  if (game === 'alive') return <StageFrame code="01" onSoundEnabled={onSoundEnabled}><section className={`stage-center ${animatedCount.landed ? 'count-landed' : ''} ${animatedCount.displayed === 1 ? 'stage-final-one' : ''}`}>{state.gameStatus === 'revealed' && state.stayAliveWinner ? <div className="winner-reveal-scene"><p className="stage-eyebrow">باقي معنا حتى النهاية</p><h1 className="stage-winner">{state.stayAliveWinner}</h1></div> : <><p className="stage-eyebrow">الجولة {state.stayAliveRound}</p><h1 className="stage-title">باقي معنا؟</h1><div key={animatedCount.pulseKey} className="stage-count count-step">{animatedCount.displayed}</div><p className="stage-subtitle">{animatedCount.displayed === 3 ? 'ثلاثة فقط باقي معنا' : animatedCount.displayed === 1 ? 'اللحظة الأخيرة… فائز واحد ينتظر الكشف' : 'باقي معنا'}</p></>}</section></StageFrame>;
+  return <StageFrame code="02" onSoundEnabled={onSoundEnabled}><section className="stage-center">{state.gameStatus === 'revealed' && state.wamdaWinner ? <div className="winner-reveal-scene"><p className="stage-eyebrow">أسرع ومضة في أُنس</p><div className="stage-time latin-number">{((state.wamdaFastestMs ?? 0) / 1_000).toFixed(3)} ثانية</div><h1 className="stage-winner winner-delay mt-7">{state.wamdaWinner}</h1></div> : state.gameStatus === 'selection' ? <><h1 className="stage-title">وَمْضَة</h1><p className="stage-search">جارٍ البحث عن أسرع ومضة...</p><p className="stage-subtitle">{state.wamdaResponses} استجابة · {state.wamdaFalseStarts} استعجلوا 👀</p></> : <><h1 className="stage-title">وَمْضَة</h1><div className={`stage-lamp lamp-${state.wamdaSignal}`}><span>{state.wamdaSignal === 'green' ? 'الآن!' : 'انتظر الومضة...'}</span></div><p className="stage-subtitle">{state.wamdaSignal === 'idle' ? `${state.wamdaReady} جاهزين` : `${state.wamdaResponses} استجابة · ${state.wamdaFalseStarts} استعجلوا 👀`}</p></>}</section></StageFrame>;
 }
 
 function AdminLogin() {
-  const [, setLocation] = useLocation();
-  const [code, setCode] = useState('');
-  const [error, setError] = useState(false);
-  const submit = (e: React.FormEvent) => { e.preventDefault(); if (code.trim().length >= 4) { localStorage.setItem('anas-admin', 'true'); setLocation('/admin'); } else setError(true); };
-  return <Shell><main className="mx-auto flex min-h-[calc(100dvh-84px)] max-w-md items-center px-5 py-12"><form onSubmit={submit} className="panel w-full rounded-2xl p-7 md:p-10" data-testid="form-admin-login"><div className="mb-8 flex h-12 w-12 items-center justify-center rounded-full border border-[hsl(var(--primary)/.5)] text-[hsl(var(--primary))]"><ShieldCheck size={22} /></div><div className="live-mark mb-5">مساحة الفريق</div><h1 className="arabic-display text-4xl">غرفة التشغيل</h1><p className="mt-4 text-sm leading-loose text-[hsl(var(--muted-foreground))]">الدخول مخصص لمن يدير الإشارة على المسرح.</p><label className="mt-8 block text-sm"><span className="mb-2 block">رمز الدخول</span><input className="input-field text-left" dir="ltr" autoComplete="current-password" value={code} onChange={(e) => setCode(e.target.value)} placeholder="••••" type="password" data-testid="input-admin-code" /></label>{error && <p className="mt-3 text-xs text-[hsl(7_70%_72%)]" data-testid="error-admin-login">أدخل الرمز للمتابعة.</p>}<button className="button-primary mt-6 w-full" type="submit" data-testid="button-admin-login">دخول آمن <ArrowLeft size={16} /></button></form></main></Shell>;
+  const [, navigate] = useLocation(); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  useEffect(() => { void backend.adminIdentity().then((identity) => { if (identity) navigate('/admin', { replace: true }); }); }, [navigate]);
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(''); try { await backend.adminSignIn(email, password); navigate('/admin', { replace: true }); } catch { setError(APP_MODE === 'demo' ? 'رمز العرض غير صحيح' : 'تعذّر الدخول أو أن هذا الحساب ليس ضمن المشرفين'); } finally { setBusy(false); } };
+  return <Atmosphere><main className="grid min-h-screen place-items-center p-5"><form className="glass-card w-full max-w-md p-7 sm:p-9" onSubmit={submit}><BrandMark className="w-40" /><div className="mt-5 flex items-center gap-2 text-[var(--anas-copper)]"><ShieldCheck size={18} /><span className="text-xs">مساحة المنظمين</span></div><h1 className="display-title mt-5 text-4xl">غرفة التشغيل</h1>{APP_MODE === 'demo' && <div className="demo-banner mt-5">DEMO MODE — NOT FOR EVENT USE</div>}<label className="field-label mt-7">البريد الإلكتروني<input className="field text-left" dir="ltr" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required={APP_MODE === 'supabase'} /></label><label className="field-label mt-5">{APP_MODE === 'demo' ? 'رمز العرض' : 'كلمة المرور'}<input className="field text-left" dir="ltr" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="error-note mt-4">{error}</p>}<button className="primary-button mt-6 w-full" disabled={busy}>دخول آمن</button></form></main></Atmosphere>;
+}
+
+function Metric({ label, value, detail }: { label: string; value: ReactNode; detail: string }) { return <div className="admin-card metric"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>; }
+function ActionButton({ children, onClick, danger = false, primary = false, disabled = false }: { children: ReactNode; onClick: () => void; danger?: boolean; primary?: boolean; disabled?: boolean }) { return <button className={`admin-action${danger ? ' danger' : ''}${primary ? ' primary' : ''}`} onClick={onClick} disabled={disabled}>{children}</button>; }
+function Section({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) { return <section className={`admin-card ${className}`}><h2>{title}</h2><div className="admin-actions">{children}</div></section>; }
+
+function JoinQrTools({ joinUrl }: { joinUrl: string }) {
+  const exportQr = useRef<SVGSVGElement | null>(null);
+  const [feedback, setFeedback] = useState('');
+  const png = () => exportQr.current ? transparentQrPng(exportQr.current) : Promise.reject(new Error('qr_not_ready'));
+  const copyQr = async () => setFeedback(exportQr.current ? await copyTransparentQr(png()) : QR_COPY_FAILURE);
+  const downloadQr = async () => {
+    try {
+      downloadTransparentQr(await png());
+      setFeedback('تم تحميل QR الشفاف ✓');
+    } catch {
+      setFeedback('تعذر تحميل QR الشفاف');
+    }
+  };
+  const copyLink = async () => setFeedback(await copyJoinLink(joinUrl));
+  return <>
+    <div className="qr-box">
+      <QRCodeSVG value={joinUrl} size={150} bgColor="#f2dfc4" fgColor="#21100d" marginSize={4} title="QR رابط التسجيل" />
+      <span dir="ltr">{joinUrl}</span>
+    </div>
+    <QRCodeSVG ref={exportQr} className="qr-export-source" aria-hidden value={joinUrl} size={TRANSPARENT_QR_SIZE} bgColor="transparent" fgColor="#111111" level="M" marginSize={4} />
+    <div className="qr-export-actions">
+      <ActionButton onClick={() => void copyQr()}>نسخ QR شفاف</ActionButton>
+      <ActionButton onClick={() => void downloadQr()}>تحميل QR شفاف</ActionButton>
+      <ActionButton onClick={() => void copyLink()}>نسخ رابط التسجيل</ActionButton>
+    </div>
+    <p className="qr-helper">لأفضل قراءة، ضع QR الشفاف على خلفية فاتحة.</p>
+    {feedback && <p className="qr-feedback" role="status" aria-live="polite">{feedback}</p>}
+  </>;
+}
+
+type StayAliveAdminProps = { state: LiveState; winnerSelected: boolean; target: string; busy: boolean; setTarget: (target: string) => void; run: (action: AdminAction, payload?: Record<string, unknown>, confirmation?: string, success?: string) => Promise<boolean>; round: (target?: number) => Promise<void> };
+function StayAliveAdmin({ state, winnerSelected, target, busy, setTarget, run, round }: StayAliveAdminProps) {
+  const phase = stayAlivePhase(state, winnerSelected);
+  const noParticipantsReason = stayAliveStartDisabledReason(state.registered);
+  const requestedTarget = Number(target);
+  const validTarget = validSurvivorTarget(state.stayAliveRemaining, requestedTarget);
+  const isStayAlive = state.activeGame === 'stay_alive';
+  const canStart = !state.activeGame && state.gameStatus === 'idle' && !noParticipantsReason;
+  const canPause = isStayAlive && state.gameStatus === 'live';
+  const canResume = isStayAlive && state.gameStatus === 'paused';
+  const canExecuteRound = isStayAlive && ['live', 'selection'].includes(state.gameStatus) && validTarget;
+  const canSelectWinner = isStayAlive && state.stayAliveRemaining === 1 && !winnerSelected && state.gameStatus !== 'revealed';
+  const canRevealWinner = isStayAlive && winnerSelected && state.gameStatus === 'selection';
+  const statusLabel: Record<LiveState['gameStatus'], string> = { idle: 'lobby', live: 'live', paused: 'paused', selection: 'selection', revealed: 'revealed', complete: 'revealed' };
+  const startReason = noParticipantsReason ?? (isStayAlive ? 'اللعبة بدأت بالفعل' : state.activeGame ? 'أوقف اللعبة الحالية أو أعدها للردهة أولًا' : null);
+  const roundReason = !isStayAlive ? 'ابدأ باقي معنا؟ أولًا' : state.gameStatus === 'paused' ? 'استأنف اللعبة أولًا لتنفيذ الجولة' : state.gameStatus === 'revealed' ? 'تم كشف الفائز؛ أعد ضبط الألعاب لبدء بروفة جديدة' : !validTarget ? 'اختر عددًا أقل من الباقين وأكبر من صفر' : null;
+  const selectionReason = state.stayAliveRemaining !== 1 ? 'يتاح الاختيار عندما يبقى مشارك واحد فقط' : winnerSelected ? 'تم اختيار الفائز بالفعل' : !isStayAlive ? 'ابدأ باقي معنا؟ أولًا' : null;
+  const revealReason = !winnerSelected ? 'اختر الفائز أولًا' : state.gameStatus === 'revealed' ? 'تم كشف الفائز بالفعل' : null;
+
+  return <Section title="باقي معنا؟" className="guided-card stay-alive-operator">
+    <div className="operator-status-grid">
+      <span>المسجلون <b>{state.registered}</b></span>
+      <span>الجولة <b>{state.stayAliveRound}</b></span>
+      <span>الباقون <b>{state.stayAliveRemaining}</b></span>
+      <span>الحالة <b dir="ltr">{statusLabel[state.gameStatus]}</b></span>
+    </div>
+
+    <div className="operator-section">
+      <h3>البدء والإيقاف</h3>
+      <div className="operator-button-row">
+        <ActionButton primary onClick={() => void run('start_stay_alive')} disabled={busy || !canStart}>ابدأ باقي معنا؟</ActionButton>
+        <ActionButton onClick={() => void run('pause')} disabled={busy || !canPause}>إيقاف مؤقت</ActionButton>
+        <ActionButton onClick={() => void run('resume')} disabled={busy || !canResume}>استئناف</ActionButton>
+      </div>
+      {!canStart && phase === 'not-started' && startReason && <p className="disabled-reason">{startReason}</p>}
+      {isStayAlive && !canPause && !canResume && state.gameStatus !== 'revealed' && <p className="disabled-reason">الإيقاف متاح أثناء اللعب، والاستئناف بعد الإيقاف المؤقت.</p>}
+    </div>
+
+    <div className="operator-section">
+      <h3>هدف الجولة التالية</h3>
+      <div className="quick-targets">{stayAliveQuickTargets(state.stayAliveRemaining).map((option) => {
+        const optionValid = validSurvivorTarget(state.stayAliveRemaining, option.value);
+        return <button key={option.label} onClick={() => setTarget(String(option.value))} disabled={busy || !isStayAlive || !optionValid}>{option.label}</button>;
+      })}</div>
+      <label className="field-label full-row">عدد الباقين يدويًا<input className="field" dir="ltr" type="number" min="1" max={Math.max(1, state.stayAliveRemaining - 1)} value={target} onChange={(event) => setTarget(event.target.value)} /></label>
+      <p className="round-preview">{validTarget ? <><b dir="ltr">{state.stayAliveRemaining} ← {requestedTarget}</b><span>سيبقى {requestedTarget} من {state.stayAliveRemaining}</span></> : 'اختر هدفًا صالحًا لمعاينته قبل التنفيذ'}</p>
+      <ActionButton primary onClick={() => void round()} disabled={busy || !canExecuteRound}>تنفيذ الجولة</ActionButton>
+      {!canExecuteRound && roundReason && <p className="disabled-reason">{roundReason}</p>}
+    </div>
+
+    <div className="operator-section winner-controls">
+      <h3>الفائز</h3>
+      <div className="operator-button-row">
+        <ActionButton onClick={() => void run('select_stay_alive_winner')} disabled={busy || !canSelectWinner}>اختيار الفائز</ActionButton>
+        <ActionButton primary onClick={() => void run('reveal_stay_alive_winner')} disabled={busy || !canRevealWinner}>كشف الفائز</ActionButton>
+      </div>
+      {!canSelectWinner && selectionReason && <p className="disabled-reason">{selectionReason}</p>}
+      {!canRevealWinner && revealReason && <p className="disabled-reason">{revealReason}</p>}
+    </div>
+  </Section>;
 }
 
 function AdminPage() {
-  const [, setLocation] = useLocation();
-  const [authorized, setAuthorized] = useState(false);
-  useEffect(() => setAuthorized(localStorage.getItem('anas-admin') === 'true'), []);
-  if (!authorized) return <AdminLogin />;
-  return <AdminDashboard onLogout={() => { localStorage.removeItem('anas-admin'); setLocation('/admin/login'); }} />;
+  const live = useLiveState(); const [, navigate] = useLocation(); const [identity, setIdentity] = useState<AdminIdentity | null>(null); const [authChecked, setAuthChecked] = useState(false); const [logs, setLogs] = useState<AdminLog[]>([]); const [results, setResults] = useState<WamdaResult[]>([]); const [target, setTarget] = useState('10'); const [clearPhrase, setClearPhrase] = useState(''); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState('');
+  const loadAdmin = useCallback(async () => { try { const data = await backend.getAdminData(); setLogs(data.logs); setResults(data.results); } catch { /* surfaced in status */ } }, []);
+  useEffect(() => { void backend.adminIdentity().then((value) => { setIdentity(value); setAuthChecked(true); if (!value) navigate('/admin/login', { replace: true }); }); }, [navigate]);
+  useEffect(() => { if (identity) void loadAdmin(); }, [identity, loadAdmin, live.state?.updatedAt]);
+  const run = async (action: AdminAction, payload?: Record<string, unknown>, confirmation?: string, success?: string) => { if (confirmation && !window.confirm(confirmation)) return false; setBusy(true); setNotice(''); try { await backend.adminAction(action, payload); await Promise.all([live.refresh(), loadAdmin()]); if (success) setNotice(success); return true; } catch (cause) { setNotice(adminActionErrorMessage(cause)); return false; } finally { setBusy(false); } };
+  const round = async (override?: number) => { setBusy(true); setNotice(''); try { await backend.stayAliveRound(override ?? Number(target), crypto.randomUUID()); await live.refresh(); } catch { setNotice('العدد يجب أن يكون أقل من الباقين وأكبر من صفر'); } finally { setBusy(false); } };
+  const arm = async () => { setBusy(true); setNotice('تم التسليح. التوقيت العشوائي لا يظهر للمشغّل.'); try { await backend.armWamda(); await live.refresh(); } catch { setNotice('تعذّر تسليح الإشارة أو توجد إشارة فعّالة'); } finally { setBusy(false); } };
+  if (!authChecked || live.loading) return <Atmosphere><Loading /></Atmosphere>; if (!identity) return null; if (!live.state) return <Atmosphere><BackendUnavailable /></Atmosphere>;
+  const state = live.state; const joinUrl = authoritativeJoinUrl(import.meta.env.VITE_JOIN_URL, window.location.origin);
+  const latestStayAction = logs.find((log) => ['select_stay_alive_winner', 'start_stay_alive', 'reset_event_state', 'clear_all_registrations'].includes(log.action));
+  const stayWinnerSelected = latestStayAction?.action === 'select_stay_alive_winner';
+  const wamdaWinnerSelected = results.some((result) => result.selected);
+  const clearRegistrations = async () => { if (!canClearRegistrations(clearPhrase)) return; const deletedCount = state.registered; const completed = await run('clear_all_registrations', undefined, undefined, 'تم حذف جميع التسجيلات\nالمسجلون الآن 0'); if (completed) { setClearPhrase(''); if (deletedCount === 0) setNotice('لا توجد تسجيلات للحذف\nالمسجلون الآن 0'); } };
+  return <div className="admin-shell" dir="rtl"><header className="admin-header"><div><BrandMark className="w-28" /><span>غرفة التشغيل</span></div><div className="flex items-center gap-3"><Pill tone={APP_MODE === 'demo' ? 'warn' : 'good'}>{APP_MODE.toUpperCase()} BACKEND</Pill><button onClick={async () => { await backend.adminSignOut(); navigate('/admin/login'); }} aria-label="خروج"><LogOut size={18} /></button></div></header>{APP_MODE === 'demo' && <div className="demo-banner sticky top-0 z-20 rounded-none text-center">DEMO MODE — NOT FOR EVENT USE</div>}<main className="admin-main"><div className="admin-title"><div><p className="eyebrow">SYSTEM STATUS</p><h1>إدارة أُنس Live</h1></div><button className="refresh-button" onClick={() => void live.refresh()}><RefreshCw size={15} /> تحديث</button></div>{notice && <div className="admin-notice" role="status">{notice}</div>}<section className="metrics"><Metric label="المسجلون" value={state.registered} detail={`${state.connected} متصل تقريبًا`} /><Metric label="التجربة الحالية" value={state.currentExperience} detail={state.gameStatus} /><Metric label="Backend" value={APP_MODE.toUpperCase()} detail={live.error ? 'DATABASE ERROR' : 'DATABASE AVAILABLE'} /><Metric label="Realtime" value={live.realtime ? 'CONNECTED' : 'DISCONNECTED'} detail={identity.email} /></section><div className="admin-grid">
+    <Section title="التسجيل"><ActionButton onClick={() => void run('open_registration')} disabled={busy}>فتح التسجيل</ActionButton><ActionButton onClick={() => void run('close_registration')} disabled={busy}>إغلاق التسجيل</ActionButton><JoinQrTools joinUrl={joinUrl} /></Section>
+    <StayAliveAdmin state={state} winnerSelected={stayWinnerSelected} target={target} busy={busy} setTarget={setTarget} run={run} round={round} />
+    <Section title="وَمْضَة"><ActionButton onClick={() => void run('open_wamda')} disabled={busy}>فتح وَمْضَة</ActionButton><ActionButton onClick={() => void arm()} disabled={busy || state.activeGame !== 'wamda'}>تسليح الإشارة</ActionButton><ActionButton onClick={() => void run('cancel_arm')} disabled={busy || state.wamdaSignal !== 'red'}>إلغاء التسليح</ActionButton><ActionButton onClick={() => void run('close_wamda')} disabled={busy || state.activeGame !== 'wamda'}>إغلاق الاستجابات</ActionButton><ActionButton primary onClick={() => void run('reveal_wamda_winner')} disabled={busy || !wamdaWinnerSelected}>كشف الفائز</ActionButton>{!wamdaWinnerSelected && <p className="disabled-reason">اختر نتيجة صحيحة أولًا.</p>}<div className="section-stats"><span>صحيح <b>{state.wamdaValid}</b></span><span>مبكر <b>{state.wamdaFalseStarts}</b></span><span>معلّم <b>{state.wamdaFlagged}</b></span></div></Section>
+    <section className="admin-card results-card"><h2>مراجعة النتائج</h2>{results.length ? <div className="results-list">{results.map((result, index) => <div key={result.attemptId} className={result.selected ? 'selected' : ''}><span>#{index + 1} · {result.participantName}</span><b dir="ltr">{result.reactionMs} ms</b>{result.flags.length > 0 && <Pill tone="warn">{result.flags.join(', ')}</Pill>}<button onClick={() => void run('select_wamda_result', { attemptId: result.attemptId }, `اختيار ${result.participantName}؟`)}>اختيار</button></div>)}</div> : <p className="empty">لا توجد نتائج صالحة للمراجعة بعد.</p>}</section>
+    <section className="admin-card log-card"><h2>EVENT LOG</h2><div>{logs.slice(0, 20).map((log) => <article key={log.id}><span>{log.action}</span><small>{log.detail}</small><time>{new Date(log.createdAt).toLocaleTimeString('ar-OM')}</time></article>)}</div></section>
+    <Section title="تحكم عام"><ActionButton onClick={() => void run('return_lobby')} disabled={busy}>إعادة الجميع للردهة</ActionButton>{APP_MODE === 'demo' && <>{[20, 50, 100, 500].map((count) => <ActionButton key={count} onClick={async () => { await backend.simulateParticipants(count); await live.refresh(); }}>بيانات تجريبية: {count}</ActionButton>)}</>}</Section>
+    <Section title="منطقة الخطر" className="danger-zone"><div className="danger-operation"><h3>إعادة ضبط الألعاب</h3><p>يعيد باقي معنا ووَمْضَة إلى البداية مع إبقاء التسجيلات.</p><ActionButton danger onClick={() => void run('reset_event_state', undefined, RESET_GAMES_CONFIRMATION, 'تمت إعادة ضبط الألعاب مع إبقاء جميع التسجيلات.')} disabled={busy}>إعادة ضبط الألعاب</ActionButton></div><div className="danger-operation destructive"><h3>حذف جميع التسجيلات</h3><p>سيتم حذف {state.registered} مشارك وجميع جلسات أجهزتهم.</p><label className="field-label">اكتب <b dir="ltr">{CLEAR_REGISTRATIONS_PHRASE}</b> للتأكيد<input className="field text-left" dir="ltr" autoComplete="off" value={clearPhrase} onChange={(event) => setClearPhrase(event.target.value)} /></label><ActionButton danger onClick={() => void clearRegistrations()} disabled={busy || !canClearRegistrations(clearPhrase)}>حذف جميع التسجيلات</ActionButton>{!canClearRegistrations(clearPhrase) && <p className="disabled-reason">لن يُفعّل الحذف حتى تُكتب العبارة كاملة.</p>}</div></Section>
+  </div></main></div>;
 }
 
-function AdminDashboard({ onLogout }: { onLogout: () => void }) {
-  const stateQuery = useGetEventState({ query: { queryKey: getGetEventStateQueryKey(), refetchInterval: 3500 } });
-  const summaryQuery = useGetEventSummary({ query: { queryKey: getGetEventSummaryQueryKey(), refetchInterval: 5000 } });
-  const healthQuery = useHealthCheck({ query: { queryKey: getHealthCheckQueryKey(), refetchInterval: 10000 } });
-  const [local, setLocal] = useState<EventState | null>(null);
-  const state = local ?? stateQuery.data ?? (IS_DEMO_MODE ? DEMO_STATE : null);
-  const action = useExecuteAdminAction();
-  const round = useExecuteStayAliveRound();
-  const [target, setTarget] = useState('64');
-  const offline = Boolean(stateQuery.error || summaryQuery.error);
-  if (!state) return <div className="app-shell min-h-screen" dir="rtl"><main className="mx-auto max-w-md px-5 py-24"><BackendUnavailable /></main></div>;
-  const fire = (name: AdminActionInputAction) => action.mutate({ data: { action: name } }, { onSuccess: setLocal, onError: () => setLocal(actionState(name, state)) });
-  const doRound = () => round.mutate({ data: { targetSurvivors: Number(target) || 1 } }, { onSuccess: setLocal, onError: () => setLocal({ ...state, stayAliveRemaining: Number(target) || 1, stayAliveRound: (state.stayAliveRound ?? 0) + 1, updatedAt: new Date().toISOString() }) });
-  const logs = summaryQuery.data?.eventLog ?? [{ id: '1', label: 'بدء العرض المحلي', detail: 'بانتظار اتصال غرفة التشغيل', time: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) }];
-  return <div className="app-shell" dir="rtl"><header className="border-b border-[hsl(var(--border))] bg-[hsl(var(--sidebar)/.84)]"><div className="mx-auto flex max-w-[1500px] items-center justify-between px-5 py-4 md:px-8"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-admin-home"><div className="grid h-9 w-9 place-items-center rounded-full border border-[hsl(var(--primary)/.55)] text-sm text-[hsl(var(--primary))]">أ</div><div><div className="brand-word">غرفة التشغيل</div><div className="font-mono-ui text-[9px] tracking-[.17em] text-[hsl(var(--muted-foreground))]">ANAS LIVE / CONTROL</div></div></Link><div className="flex items-center gap-4"><StatePill tone={offline ? 'gold' : 'green'}>{offline ? 'عرض محلي' : 'متصل'}</StatePill><button onClick={onLogout} className="text-xs text-[hsl(var(--muted-foreground))] underline underline-offset-4" data-testid="button-admin-logout">خروج</button></div></div></header><main className="mx-auto max-w-[1500px] px-5 py-7 md:px-8"><div className="mb-8 flex flex-wrap items-end justify-between gap-5"><div><div className="live-mark mb-3">المشهد الآن</div><h1 className="arabic-display text-4xl md:text-5xl">مساء الافتتاح</h1></div><div className="font-mono-ui text-xs text-[hsl(var(--muted-foreground))]">UPDATED {new Date(state.updatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div></div><section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric icon={<Users size={17} />} label="مسجّل" value={state.registered} detail={`${state.connected} متصل الآن`} /><Metric icon={<Radio size={17} />} label="التجربة الحالية" value={state.currentExperience === 'lobby' ? 'الردهة' : state.currentExperience === 'stay_alive' ? 'باقي معنا؟' : state.currentExperience === 'wamda' ? 'وَمْضَة' : state.currentExperience} detail={state.gameStatus} /><Metric icon={<Sparkles size={17} />} label="باقي معنا؟" value={state.stayAliveRemaining} detail={`الجولة ${state.stayAliveRound ?? 0}`} /><Metric icon={<Signal size={17} />} label="وَمْضَة" value={state.wamdaResponses ?? 0} detail={`${state.wamdaFalseStarts ?? 0} إشارات مبكرة`} /></section><div className="mt-8 grid gap-6 xl:grid-cols-[1.2fr_.8fr]"><section className="panel rounded-xl p-5 md:p-7"><div className="mb-6 flex items-center justify-between"><div><div className="font-display text-xl">لوحة الإشارة</div><div className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">كل ضغط هنا يصل إلى المسرح فوراً</div></div><StatePill tone={state.gameStatus === 'live' ? 'green' : 'quiet'}>{state.stageMode}</StatePill></div><div className="grid gap-3 sm:grid-cols-2"><ControlButton label="فتح التسجيل" detail="استقبال حضور جديد" onClick={() => fire('open_registration')} active={state.registrationOpen} test="button-open-registration" /><ControlButton label="إغلاق التسجيل" detail="إيقاف الدخول" onClick={() => fire('close_registration')} test="button-close-registration" /><ControlButton label="بدء باقي معنا؟" detail="عرض الجولة الأولى" onClick={() => fire('start_stay_alive')} active={state.activeGame === 'stay_alive'} test="button-start-stay-alive" /><ControlButton label="إيقاف مؤقت" detail="تجميد التجربة" onClick={() => fire('pause')} test="button-pause-game" /><ControlButton label="عودة إلى الردهة" detail="إخفاء التجربة" onClick={() => fire('return_lobby')} test="button-return-lobby" /><ControlButton label="فتح وَمْضَة" detail="تحضير شاشة الإشارة" onClick={() => fire('open_wamda')} active={state.activeGame === 'wamda'} test="button-open-wamda" /></div></section><section className="panel rounded-xl p-5 md:p-7"><div className="mb-6 flex items-center justify-between"><div><div className="font-display text-xl">باقي معنا؟</div><div className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">اختصر الدائرة إلى عدد محدد</div></div><StatePill tone="gold">الجولة {state.stayAliveRound ?? 0}</StatePill></div><div className="flex gap-3"><input className="input-field text-left" dir="ltr" type="number" min="1" value={target} onChange={(e) => setTarget(e.target.value)} data-testid="input-target-survivors" /><button className="button-primary whitespace-nowrap" onClick={doRound} disabled={round.isPending} data-testid="button-execute-round">تنفيذ الجولة</button></div><div className="mt-8 grid grid-cols-2 gap-3"><StatTile label="الباقون" value={state.stayAliveRemaining} /><StatTile label="الفائز" value={state.stayAliveWinner ?? '—'} /></div></section><section className="panel rounded-xl p-5 md:p-7"><div className="mb-6 flex items-center justify-between"><div><div className="font-display text-xl">وَمْضَة</div><div className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">إدارة الإشارة والنتيجة</div></div><span className={`h-3 w-3 rounded-full ${state.wamdaSignal === 'green' ? 'bg-[hsl(153_48%_70%)]' : state.wamdaSignal === 'red' ? 'bg-[hsl(7_70%_72%)]' : 'bg-[hsl(var(--muted-foreground))]'}`} /></div><div className="grid grid-cols-2 gap-3"><ControlButton label="تسليح الإشارة" detail="بدء العد الخاطف" onClick={() => fire('arm_wamda')} active={state.wamdaSignal === 'red'} test="button-arm-wamda" /><ControlButton label="إلغاء التسليح" detail="العودة إلى الانتظار" onClick={() => fire('cancel_arm')} test="button-cancel-wamda" /><ControlButton label="اختيار النتيجة" detail="تثبيت الأسرع" onClick={() => fire('select_result')} test="button-select-result" /><ControlButton label="كشف الفائز" detail="إظهار الاسم" onClick={() => fire('reveal_winner')} test="button-reveal-winner" /><ControlButton label="إغلاق وَمْضَة" detail="إنهاء اللعبة" onClick={() => fire('close_wamda')} test="button-close-wamda" /></div><div className="mt-5 flex items-center justify-between border-t border-[hsl(var(--border))] pt-4 text-xs"><span className="text-[hsl(var(--muted-foreground))]">الأسرع</span><span className="font-mono-ui text-[hsl(var(--primary))]">{state.wamdaFastestMs ? `${state.wamdaFastestMs} ms` : '—'}</span></div></section><section className="panel rounded-xl p-5 md:p-7"><div className="mb-5 flex items-center justify-between"><div className="font-display text-xl">سجل الأمسية</div><Clock3 size={17} className="text-[hsl(var(--muted-foreground))]" /></div><div className="space-y-4">{logs.slice(0, 6).map((log) => <div key={log.id} className="flex gap-3 border-b border-[hsl(var(--border)/.6)] pb-3 last:border-0"><div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[hsl(var(--primary))]" /><div className="min-w-0"><div className="text-sm">{log.label}</div><div className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{log.detail}</div></div><span className="mr-auto shrink-0 font-mono-ui text-[10px] text-[hsl(var(--muted-foreground))]">{log.time}</span></div>)}</div></section></div><div className="mt-7 flex flex-wrap items-center justify-between gap-4 border-t border-[hsl(var(--border))] pt-5 text-xs text-[hsl(var(--muted-foreground))]"><div className="flex items-center gap-5"><span className="flex items-center gap-2"><Wifi size={14} className="text-[hsl(153_48%_70%)]" /> API {healthQuery.data?.status ?? 'local'}</span><span className="flex items-center gap-2"><DoorOpen size={14} /> المسرح /{state.stageMode}</span></div><button className="button-outline min-h-8 px-3 py-1 text-xs" onClick={() => { stateQuery.refetch(); summaryQuery.refetch(); healthQuery.refetch(); }} data-testid="button-refresh-admin"><RefreshCw size={13} /> تحديث</button></div></main></div>;
-}
-
-function Metric({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string | number; detail: string }) { return <div className="panel rounded-xl p-5"><div className="flex items-center justify-between text-[hsl(var(--muted-foreground))]"><span className="text-xs">{label}</span><span className="text-[hsl(var(--primary))]">{icon}</span></div><div className="mt-4 font-mono-ui text-2xl text-[hsl(var(--foreground))]">{value}</div><div className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">{detail}</div></div>; }
-function StatTile({ label, value }: { label: string; value: string | number }) { return <div className="rounded-lg bg-[hsl(var(--muted)/.7)] p-4"><div className="text-xs text-[hsl(var(--muted-foreground))]">{label}</div><div className="mt-2 font-mono-ui text-xl">{value}</div></div>; }
-function ControlButton({ label, detail, onClick, active = false, test }: { label: string; detail: string; onClick: () => void; active?: boolean; test: string }) { return <button onClick={onClick} className={`rounded-lg border p-4 text-right transition-transform hover:-translate-y-0.5 ${active ? 'border-[hsl(var(--primary)/.7)] bg-[hsl(var(--primary)/.1)]' : 'border-[hsl(var(--border))] bg-[hsl(var(--muted)/.4)]'}`} data-testid={test}><div className="flex items-center justify-between gap-2 text-sm"><span>{label}</span>{active && <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary))]" />}</div><div className="mt-1 text-[11px] text-[hsl(var(--muted-foreground))]">{detail}</div></button>; }
-
-function NotFound() {
-  return <Shell><main className="mx-auto flex min-h-[calc(100dvh-84px)] max-w-xl flex-col items-center justify-center px-5 text-center"><div className="font-mono-ui text-7xl text-[hsl(var(--primary))]">404</div><h1 className="arabic-display mt-6 text-4xl">هذه الصفحة خارج الغرفة</h1><p className="mt-4 text-[hsl(var(--muted-foreground))]">ربما انتهت اللحظة، أو كُتب العنوان بشكل مختلف.</p><Link href="/" className="button-outline mt-8 no-underline" data-testid="link-notfound-home">العودة إلى أُنس <ArrowLeft size={16} /></Link></main></Shell>;
-}
-
-function Router() {
-  const [location] = useLocation();
-  return <ErrorBoundary resetKey={location}><Switch><Route path="/" component={Home} /><Route path="/join" component={JoinPage} /><Route path="/play" component={PlayPage} /><Route path="/admin/login" component={AdminLogin} /><Route path="/admin" component={AdminPage} /><Route path="/stage/alive"><StagePage mode="alive" /></Route><Route path="/stage/wamda"><StagePage mode="wamda" /></Route><Route component={NotFound} /></Switch></ErrorBoundary>;
-}
-
-export default function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
-}
+function NotFound() { const [, navigate] = useLocation(); useEffect(() => navigate('/join', { replace: true }), [navigate]); return null; }
+function Router() { const [location] = useLocation(); return <ErrorBoundary resetKey={location}><Switch><Route path="/" component={PublicHome} /><Route path="/join" component={JoinPage} /><Route path="/play" component={PlayPage} /><Route path="/admin/login" component={AdminLogin} /><Route path="/admin" component={AdminPage} /><Route path="/stage/alive"><StagePage game="alive" /></Route><Route path="/stage/wamda"><StagePage game="wamda" /></Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+export default function App() { return <WouterRouter><Router /></WouterRouter>; }

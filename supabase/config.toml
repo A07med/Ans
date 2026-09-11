@@ -1,0 +1,4 @@
+project_id = "anas-live"
+
+[functions.wamda-signal]
+verify_jwt = true
