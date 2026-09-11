@@ -118,7 +118,7 @@ declare v_participant public.participants; v_token text; v_open boolean; begin
   exception when unique_violation then
     raise exception 'already_registered' using errcode='P0001';
   end;
-  v_token:=encode(gen_random_bytes(32),'hex'); insert into public.participant_sessions(participant_id,token_hash) values(v_participant.id,digest(v_token,'sha256'));
+  v_token:=encode(extensions.gen_random_bytes(32),'hex'); insert into public.participant_sessions(participant_id,token_hash) values(v_participant.id,extensions.digest(v_token,'sha256'));
   insert into public.admin_action_log(action,detail) values('participant_registered','Participant registered');
   update public.event_state set updated_at=now() where id;
   return jsonb_build_object('token',v_token,'participantId',v_participant.id,'name',v_participant.name);
@@ -127,12 +127,12 @@ revoke all on function public.register_participant(text,text) from public,anon,a
 grant execute on function public.register_participant(text,text) to anon,authenticated;
 create or replace function public.session_participant_id(p_token text) returns uuid language plpgsql security definer set search_path=public as $$
 declare v_id uuid; begin if p_token is null or char_length(p_token)<>64 then return null; end if;
-select participant_id into v_id from public.participant_sessions where token_hash=digest(p_token,'sha256') and revoked_at is null and expires_at>now(); return v_id; end; $$;
+select participant_id into v_id from public.participant_sessions where token_hash=extensions.digest(p_token,'sha256') and revoked_at is null and expires_at>now(); return v_id; end; $$;
 revoke all on function public.session_participant_id(text) from public,anon,authenticated;
 create or replace function public.get_participant_state(p_token text) returns jsonb language plpgsql security definer set search_path=public as $$
 declare v_pid uuid; v_name text; v_session uuid; v_stay text; v_attempt public.wamda_attempts; begin
 v_pid:=public.session_participant_id(p_token); if v_pid is null then return null; end if;
-update public.participant_sessions set last_seen_at=now() where token_hash=digest(p_token,'sha256'); select name into v_name from public.participants where id=v_pid;
+update public.participant_sessions set last_seen_at=now() where token_hash=extensions.digest(p_token,'sha256'); select name into v_name from public.participants where id=v_pid;
 select active_game_session_id into v_session from public.event_state where id; select status into v_stay from public.stay_alive_entries where game_session_id=v_session and participant_id=v_pid;
 select * into v_attempt from public.wamda_attempts where game_session_id=v_session and participant_id=v_pid;
 return jsonb_build_object('participantId',v_pid,'name',v_name,'stayAliveStatus',v_stay,'wamdaAttempt',case when v_attempt.id is null then 'none' when v_attempt.false_start then 'false_start' when cardinality(v_attempt.integrity_flags)>0 then 'flagged' else 'valid' end,'reactionMs',v_attempt.reaction_ms); end; $$;

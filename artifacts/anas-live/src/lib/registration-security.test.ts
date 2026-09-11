@@ -46,5 +46,11 @@ describe("registration SQL security contract", () => {
     expect(securityDefinerCount).toBe(13);
     expect(fixedSearchPathCount).toBe(securityDefinerCount);
     expect(explicitPublicRevokes).toBe(securityDefinerCount);
+    expect(
+      migration.match(/extensions\.(?:gen_random_bytes|digest)\s*\(/g),
+    ).toHaveLength(4);
+    expect(migration).not.toMatch(
+      /(?<!extensions\.)\b(?:gen_random_bytes|digest)\s*\(/,
+    );
   });
 });
