@@ -1,6 +1,6 @@
 import type { SoundContextState, SoundCue } from './event-polish';
 
-export type EventCue = SoundCue | 'count-start' | 'count-tick' | 'count-land' | 'count-three' | 'count-one' | 'test';
+export type EventCue = SoundCue | 'celebration' | 'count-start' | 'count-tick' | 'count-land' | 'count-three' | 'count-one' | 'test';
 type Listener = () => void;
 type AudioContextFactory = () => AudioContext | null;
 
@@ -102,6 +102,10 @@ export class EventSoundEngine {
       this.tone(330, 0.5, 0.075, 660, 'sine');
       this.tone(494, 0.55, 0.055, 988, 'sine', 0.09);
       this.tone(659, 0.65, 0.045, 1_318, 'sine', 0.18);
+    } else if (cue === 'celebration') {
+      this.tone(110, 0.42, 0.12, 55, 'sine');
+      this.tone(660, 0.35, 0.07, 990, 'triangle', 0.08);
+      this.tone(880, 0.42, 0.06, 1_320, 'sine', 0.16);
     } else if (cue === 'count-start') {
       this.tone(95, 0.7, 0.045, 180, 'sawtooth');
     } else if (cue === 'count-tick') {

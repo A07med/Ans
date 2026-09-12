@@ -75,4 +75,15 @@ describe('EventSoundEngine', () => {
     engine.play('count-one');
     expect(fake.context.createOscillator).toHaveBeenCalledTimes(4);
   });
+
+  it('plays one reveal cue per winner followed by a distinct celebration impact', async () => {
+    const fake = fakeAudioContext();
+    const engine = new EventSoundEngine(() => fake.context as unknown as AudioContext);
+    await engine.unlock();
+    engine.play('winner');
+    engine.play('winner');
+    engine.play('winner');
+    engine.play('celebration');
+    expect(fake.context.createOscillator).toHaveBeenCalledTimes(12);
+  });
 });

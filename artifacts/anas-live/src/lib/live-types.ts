@@ -4,6 +4,9 @@ export type GameStatus = 'idle' | 'live' | 'paused' | 'selection' | 'revealed' |
 export type WamdaSignal = 'idle' | 'red' | 'green' | 'closed';
 export type StayAliveStatus = 'alive' | 'eliminated' | 'finalist' | 'winner' | null;
 
+export type StayAliveWinner = { name: string };
+export type WamdaWinner = { name: string; position: number; reactionMs: number };
+
 export type LiveState = {
   registrationOpen: boolean;
   currentExperience: Experience;
@@ -14,8 +17,11 @@ export type LiveState = {
   stageMode: 'lobby' | 'alive' | 'wamda' | 'end';
   registered: number;
   connected: number;
+  winnerTargetCount: number;
+  winnersSelectedCount: number;
   stayAliveRemaining: number;
   stayAliveRound: number;
+  stayAliveWinners: StayAliveWinner[];
   stayAliveWinner: string | null;
   wamdaReady: number;
   wamdaResponses: number;
@@ -23,6 +29,7 @@ export type LiveState = {
   wamdaValid: number;
   wamdaFlagged: number;
   wamdaFastestMs: number | null;
+  wamdaWinners: WamdaWinner[];
   wamdaWinner: string | null;
   wamdaSignal: WamdaSignal;
   updatedAt: string;
@@ -33,11 +40,14 @@ export type ParticipantView = {
   participantId: string;
   name: string;
   stayAliveStatus: StayAliveStatus;
+  stayAliveIsWinner: boolean | null;
   wamdaAttempt: 'none' | 'false_start' | 'valid' | 'flagged';
   reactionMs: number | null;
   wamdaRank: number | null;
   wamdaTotalRanked: number | null;
   wamdaIsWinner: boolean | null;
+  wamdaWinnerPosition: number | null;
+  winnerTargetCount: number;
   winnerRevealed: boolean;
 };
 export type AdminIdentity = { id: string; email: string };
@@ -49,6 +59,7 @@ export type WamdaResult = {
   submissionReceivedAt?: string;
   flags: string[];
   selected: boolean;
+  selectedPosition?: number | null;
 };
 
 export type AdminAction =
@@ -56,7 +67,7 @@ export type AdminAction =
   | 'return_lobby' | 'select_stay_alive_winner' | 'reveal_stay_alive_winner'
   | 'reset_stay_alive' | 'open_wamda' | 'cancel_arm' | 'close_wamda'
   | 'select_wamda_result' | 'reveal_wamda_winner' | 'reset_wamda'
-  | 'reset_event_state' | 'clear_all_registrations';
+  | 'set_winner_target' | 'reset_event_state' | 'clear_all_registrations';
 
 export type Subscription = { unsubscribe: () => void };
 export interface LiveBackend {
