@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createClient } from '@supabase/supabase-js';
 import {
   getGetEventStateQueryKey,
   getGetEventSummaryQueryKey,
@@ -49,6 +50,29 @@ function useLiveState(): StateWithDemo {
   const query = useGetEventState({
     query: { queryKey: getGetEventStateQueryKey(), refetchInterval: 4000 },
   });
+  useEffect(() => {
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!url || !anonKey) return;
+    const client = createClient(url, anonKey, { auth: { persistSession: false } });
+    const channel = client
+      .channel('anas-live-event')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_state' }, () => {
+        queryClient.invalidateQueries({ queryKey: getGetEventStateQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetEventSummaryQueryKey() });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stay_alive_rounds' }, () => {
+        queryClient.invalidateQueries({ queryKey: getGetEventStateQueryKey() });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wamda_attempts' }, () => {
+        queryClient.invalidateQueries({ queryKey: getGetEventStateQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetEventSummaryQueryKey() });
+      })
+      .subscribe();
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, []);
   return { state: query.data ?? (IS_DEMO_MODE ? DEMO_STATE : null), offline: Boolean(query.error), loading: query.isLoading, error: Boolean(query.error) };
 }
 
@@ -255,17 +279,57 @@ function actionState(action: AdminActionInputAction, current: EventState): Event
 function AdminLogin() {
   const [, setLocation] = useLocation();
   const [code, setCode] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
-  const submit = (e: React.FormEvent) => { e.preventDefault(); if (code.trim().length >= 4) { localStorage.setItem('anas-admin', 'true'); setLocation('/admin'); } else setError(true); };
-  return <Shell><main className="mx-auto flex min-h-[calc(100dvh-84px)] max-w-md items-center px-5 py-12"><form onSubmit={submit} className="panel w-full rounded-2xl p-7 md:p-10" data-testid="form-admin-login"><div className="mb-8 flex h-12 w-12 items-center justify-center rounded-full border border-[hsl(var(--primary)/.5)] text-[hsl(var(--primary))]"><ShieldCheck size={22} /></div><div className="live-mark mb-5">مساحة الفريق</div><h1 className="arabic-display text-4xl">غرفة التشغيل</h1><p className="mt-4 text-sm leading-loose text-[hsl(var(--muted-foreground))]">الدخول مخصص لمن يدير الإشارة على المسرح.</p><label className="mt-8 block text-sm"><span className="mb-2 block">رمز الدخول</span><input className="input-field text-left" dir="ltr" autoComplete="current-password" value={code} onChange={(e) => setCode(e.target.value)} placeholder="••••" type="password" data-testid="input-admin-code" /></label>{error && <p className="mt-3 text-xs text-[hsl(7_70%_72%)]" data-testid="error-admin-login">أدخل الرمز للمتابعة.</p>}<button className="button-primary mt-6 w-full" type="submit" data-testid="button-admin-login">دخول آمن <ArrowLeft size={16} /></button></form></main></Shell>;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(false);
+    if (IS_DEMO_MODE) {
+      if (code.trim().length >= 4) {
+        localStorage.setItem('anas-admin', 'true');
+        setLocation('/admin');
+      } else setError(true);
+      return;
+    }
+    if (!email.trim() || !password || pending) return;
+    setPending(true);
+    try {
+      const response = await fetch('/api/auth/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      if (!response.ok) throw new Error('admin login failed');
+      setLocation('/admin');
+    } catch {
+      setError(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return <Shell><main className="mx-auto flex min-h-[calc(100dvh-84px)] max-w-md items-center px-5 py-12"><form onSubmit={submit} className="panel w-full rounded-2xl p-7 md:p-10" data-testid="form-admin-login"><div className="mb-8 flex h-12 w-12 items-center justify-center rounded-full border border-[hsl(var(--primary)/.5)] text-sm text-[hsl(var(--primary))]"><ShieldCheck size={22} /></div><div className="live-mark mb-5">مساحة الفريق</div><h1 className="arabic-display text-4xl">غرفة التشغيل</h1><p className="mt-4 text-sm leading-loose text-[hsl(var(--muted-foreground))]">{IS_DEMO_MODE ? 'وضع العرض المحلي — غير صالح للاستخدام في الأمسية.' : 'الدخول عبر حساب Supabase مصرح له بإدارة الأمسية.'}</p>{IS_DEMO_MODE ? <label className="mt-8 block text-sm"><span className="mb-2 block">رمز العرض المحلي</span><input className="input-field text-left" dir="ltr" autoComplete="current-password" value={code} onChange={(e) => setCode(e.target.value)} placeholder="••••" type="password" data-testid="input-admin-code" /></label> : <div className="mt-8 space-y-4"><label className="block text-sm"><span className="mb-2 block">البريد الإلكتروني</span><input className="input-field text-left" dir="ltr" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} type="email" data-testid="input-admin-email" /></label><label className="block text-sm"><span className="mb-2 block">كلمة المرور</span><input className="input-field text-left" dir="ltr" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} type="password" data-testid="input-admin-password" /></label></div>}{error && <p className="mt-3 text-xs text-[hsl(7_70%_72%)]" data-testid="error-admin-login">{IS_DEMO_MODE ? 'أدخل رمزًا من أربعة أحرف على الأقل.' : 'تعذر التحقق من الحساب أو ليس مصرحًا له بإدارة الأمسية.'}</p>}<button className="button-primary mt-6 w-full" type="submit" disabled={pending} data-testid="button-admin-login">{pending ? 'نتحقق…' : 'دخول آمن'} <ArrowLeft size={16} /></button></form></main></Shell>;
 }
 
 function AdminPage() {
   const [, setLocation] = useLocation();
   const [authorized, setAuthorized] = useState(false);
-  useEffect(() => setAuthorized(localStorage.getItem('anas-admin') === 'true'), []);
+  const [checked, setChecked] = useState(IS_DEMO_MODE);
+  useEffect(() => {
+    if (IS_DEMO_MODE) {
+      setAuthorized(localStorage.getItem('anas-admin') === 'true');
+      return;
+    }
+    fetch('/api/auth/admin/me', { credentials: 'same-origin' })
+      .then((response) => { setAuthorized(response.ok); })
+      .catch(() => setAuthorized(false))
+      .finally(() => setChecked(true));
+  }, []);
+  if (!checked) return <Shell><main className="mx-auto max-w-md px-5 py-32"><LoadingBlock label="نتحقق من غرفة التشغيل" /></main></Shell>;
   if (!authorized) return <AdminLogin />;
-  return <AdminDashboard onLogout={() => { localStorage.removeItem('anas-admin'); setLocation('/admin/login'); }} />;
+  return <AdminDashboard onLogout={() => { localStorage.removeItem('anas-admin'); void fetch('/api/auth/admin/logout', { method: 'POST', credentials: 'same-origin' }); setLocation('/admin/login'); }} />;
 }
 
 function AdminDashboard({ onLogout }: { onLogout: () => void }) {
